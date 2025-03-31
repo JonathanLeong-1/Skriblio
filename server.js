@@ -636,15 +636,20 @@ function endRound(roomId) {
     room.currentRoundData = null;
   }
   
-  // Reveal the word to everyone
+  // Check if game should end (this is the last round)
+  const isLastRound = room.currentRound >= room.settings.rounds;
+  
+  // Always reveal the word to everyone
   io.to(roomId).emit('roundEnded', {
     word: room.currentWord,
-    scores: Object.values(room.players).map(p => ({ id: p.id, name: p.name, score: p.score }))
+    scores: Object.values(room.players).map(p => ({ id: p.id, name: p.name, score: p.score })),
+    isLastRound: isLastRound // Send flag to client
   });
   
-  // Check if game should end
-  if (room.currentRound >= room.settings.rounds) {
-    // End game immediately for the last round
+  // If it's the last round, end the game immediately 
+  if (isLastRound) {
+    console.log(`Last round completed in room ${roomId}, ending game`);
+    // End game immediately without waiting
     endGame(roomId);
   } else {
     // Schedule next round after 5 seconds

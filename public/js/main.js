@@ -131,6 +131,14 @@ let recapState = {
 function init() {
     setupEventListeners();
     showScreen(mainMenu);
+    
+    // Add global keyboard listeners
+    document.getElementById('roomCode').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            joinRoom();
+        }
+    });
 }
 
 // Setup all event listeners
@@ -1154,10 +1162,10 @@ function handleRoundEnded(data) {
     // Update scores list
     updateScoresList(data.scores);
     
-    // Check if this was the last round
-    if (currentRoom.settings.rounds && parseInt(currentRoundElement.textContent) >= currentRoom.settings.rounds) {
-        // Skip the countdown and go straight to game end
-        return;
+    // If the server indicates this is the last round, don't show the round end screen
+    if (data.isLastRound) {
+        console.log("Last round completed, waiting for game end event");
+        return; // Skip showing round end screen, wait for gameEnded event
     }
     
     // Start the countdown timer for the next round

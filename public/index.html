@@ -206,7 +206,81 @@
                 <ul id="finalScoresList"></ul>
             </div>
             
-            <button id="backToMenuBtn" class="btn primary-btn">Back to Menu</button>
+            <div class="game-controls">
+                <button id="viewRecapBtn" class="btn primary-btn">View Game Recap</button>
+                <div id="hostEndControls" class="host-controls hidden">
+                    <button id="playAgainBtn" class="btn primary-btn">Play Again</button>
+                    <button id="adjustSettingsBtn" class="btn secondary-btn">Adjust Settings</button>
+                </div>
+                <button id="backToMenuBtn" class="btn secondary-btn">Back to Menu</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Recap Screen -->
+    <div id="game-recap" class="screen hidden">
+        <div class="container">
+            <h1>Game Recap</h1>
+            
+            <div class="recap-navigation">
+                <button id="prevRoundBtn" class="btn secondary-btn">&lt; Previous</button>
+                <span id="recapRoundDisplay">Round 1 of 6</span>
+                <button id="nextRoundBtn" class="btn secondary-btn">Next &gt;</button>
+            </div>
+            
+            <div class="recap-content">
+                <div class="recap-drawing-container">
+                    <h3>Word: <span id="recapWord"></span></h3>
+                    <p>Drawer: <span id="recapDrawer"></span></p>
+                    <canvas id="recapCanvas"></canvas>
+                </div>
+                
+                <div class="recap-results">
+                    <h3>Results</h3>
+                    <ul id="recapGuessersList"></ul>
+                </div>
+            </div>
+            
+            <button id="backFromRecapBtn" class="btn secondary-btn">Back to Results</button>
+        </div>
+    </div>
+    
+    <!-- Adjust Settings Screen -->
+    <div id="adjust-settings" class="screen hidden">
+        <div class="container">
+            <h1>Adjust Game Settings</h1>
+            
+            <div class="settings-container">
+                <div class="form-group">
+                    <label for="newRounds">Rounds</label>
+                    <input type="number" id="newRounds" min="1" max="10" value="6">
+                </div>
+                
+                <div class="form-group">
+                    <label for="newDrawTime">Draw Time (seconds)</label>
+                    <input type="number" id="newDrawTime" min="30" max="180" value="60">
+                </div>
+                
+                <div class="form-group">
+                    <label for="newWordCategory">Word Category</label>
+                    <select id="newWordCategory" class="word-category-select">
+                        <option value="general">General</option>
+                        <option value="countries">Countries</option>
+                        <option value="custom">Custom Words</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="newCustomWordsContainer">
+                    <label for="newCustomWords">Custom Words</label>
+                    <textarea id="newCustomWords" placeholder="Enter custom words, separated by commas"></textarea>
+                    <p class="hint">Enter at least 10 words, separated by commas</p>
+                </div>
+            </div>
+            
+            <div class="menu-buttons">
+                <button id="startNewGameBtn" class="btn primary-btn">Start New Game</button>
+                <button id="backFromSettingsBtn" class="btn secondary-btn">Back</button>
+            </div>
         </div>
     </div>
     

@@ -119,7 +119,8 @@ io.on('connection', (socket) => {
         currentWord: null,
         wordOptions: [],
         revealedLetters: [],
-        drawings: []
+        drawings: [],
+        roundsData: [] // Store data for each round
       };
 
       socket.join(roomId);
@@ -159,9 +160,18 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Clear previous rounds data if restarting
+    room.roundsData = [];
+    
     // Start game
     room.state = 'playing';
     room.currentRound = 1;
+    
+    // Reset scores for all players
+    for (let playerId in room.players) {
+      room.players[playerId].score = 0;
+      room.players[playerId].guessedCorrectly = false;
+    }
     
     // Select first drawer
     const playerIds = Object.keys(room.players);
@@ -200,6 +210,18 @@ io.on('connection', (socket) => {
     // Record start time
     room.startTime = Date.now();
     
+    // Initialize current round data
+    room.currentRoundData = {
+      round: room.currentRound,
+      word: word,
+      drawer: {
+        id: room.currentDrawer,
+        name: room.players[room.currentDrawer].name
+      },
+      drawings: [],
+      guessers: []
+    };
+    
     // Notify the drawer with the full word
     io.to(socket.id).emit('wordSelected', {
       word: word,
@@ -237,13 +259,20 @@ io.on('connection', (socket) => {
     // Only the drawer can draw
     if (socket.id === room.currentDrawer) {
       // Store drawing data for undo functionality
-      room.drawings.push({
+      const drawingAction = {
         type: 'line',
         from: lineData.from,
         to: lineData.to,
         color: lineData.color,
         brushSize: lineData.brushSize
-      });
+      };
+      
+      room.drawings.push(drawingAction);
+      
+      // Also store in round data for recap
+      if (room.currentRoundData) {
+        room.currentRoundData.drawings.push(drawingAction);
+      }
       
       // Forward to other clients
       socket.to(roomId).emit('drawLine', lineData);
@@ -254,6 +283,18 @@ io.on('connection', (socket) => {
   socket.on('erase', (eraseData) => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Store eraser action for recap
+    if (socket.id === room.currentDrawer && room.currentRoundData) {
+      room.currentRoundData.drawings.push({
+        type: 'erase',
+        from: eraseData.from,
+        to: eraseData.to,
+        size: eraseData.size
+      });
+    }
     
     // Forward eraser data to all clients except sender
     socket.to(roomId).emit('erase', eraseData);
@@ -272,6 +313,12 @@ io.on('connection', (socket) => {
     // Remove the last drawing action
     if (room.drawings.length > 0) {
       room.drawings.pop();
+      
+      // Also update in round data
+      if (room.currentRoundData && room.currentRoundData.drawings.length > 0) {
+        room.currentRoundData.drawings.pop();
+      }
+      
       // Tell all clients to redraw
       io.to(roomId).emit('redraw', room.drawings);
     }
@@ -287,6 +334,12 @@ io.on('connection', (socket) => {
     // Only the drawer can clear
     if (socket.id === room.currentDrawer) {
       room.drawings = []; // Clear drawings array
+      
+      // Add clear action to round data
+      if (room.currentRoundData) {
+        room.currentRoundData.drawings = [];
+        room.currentRoundData.drawings.push({ type: 'clear' });
+      }
     }
     
     socket.to(roomId).emit('clearCanvas');
@@ -322,6 +375,16 @@ io.on('connection', (socket) => {
         // Award points to drawer as well
         if (room.players[room.currentDrawer]) {
           room.players[room.currentDrawer].score += 25;
+        }
+        
+        // Record correct guess for recap
+        if (room.currentRoundData) {
+          room.currentRoundData.guessers.push({
+            id: socket.id,
+            name: player.name,
+            correct: true,
+            time: Math.floor(timeElapsed)
+          });
         }
         
         // Send correct guess notification to everyone
@@ -420,6 +483,74 @@ io.on('connection', (socket) => {
       });
     }
   });
+  
+  // Play again with new settings
+  socket.on('playAgain', (newSettings) => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Only host can restart the game
+    if (!room.players[socket.id] || !room.players[socket.id].isHost) return;
+    
+    // Only allow restart if game has ended
+    if (room.state !== 'ended') return;
+    
+    // Update settings if provided
+    if (newSettings) {
+      // Get the correct word list based on category
+      let wordList = newSettings.wordList;
+      const category = newSettings.wordCategory || 'general';
+      
+      if (!wordList && category !== 'custom') {
+        if (wordLists[category]) {
+          wordList = wordLists[category];
+        } else {
+          wordList = defaultWords;
+        }
+      }
+      
+      room.settings = {
+        rounds: newSettings.rounds || room.settings.rounds,
+        drawTime: newSettings.drawTime || room.settings.drawTime,
+        wordList: wordList,
+        wordCategory: category
+      };
+    }
+    
+    // Reset game state but keep players
+    room.state = 'waiting';
+    room.currentRound = 0;
+    room.currentDrawer = null;
+    room.currentWord = null;
+    
+    // Reset scores
+    for (let playerId in room.players) {
+      room.players[playerId].score = 0;
+      room.players[playerId].guessedCorrectly = false;
+    }
+    
+    // Notify all players
+    io.to(roomId).emit('gameState', room);
+  });
+  
+  // Get game recap data
+  socket.on('getRecapData', () => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Only send recap if game has ended
+    if (room.state !== 'ended') return;
+    
+    // Send all rounds data
+    socket.emit('recapData', {
+      rounds: room.roundsData,
+      settings: room.settings
+    });
+  });
 });
 
 // Helper functions
@@ -481,6 +612,29 @@ function startRoundTimer(roomId) {
 function endRound(roomId) {
   const room = rooms[roomId];
   if (!room) return;
+  
+  // Record players who didn't guess correctly
+  if (room.currentRoundData) {
+    const allPlayerIds = Object.keys(room.players);
+    const correctGuessers = room.currentRoundData.guessers.map(g => g.id);
+    const missedPlayers = allPlayerIds.filter(id => 
+      id !== room.currentDrawer && !correctGuessers.includes(id)
+    );
+    
+    // Add missed players to guessers list
+    missedPlayers.forEach(id => {
+      room.currentRoundData.guessers.push({
+        id: id,
+        name: room.players[id].name,
+        correct: false,
+        time: -1 // Didn't guess
+      });
+    });
+    
+    // Save round data
+    room.roundsData.push(room.currentRoundData);
+    room.currentRoundData = null;
+  }
   
   // Reveal the word to everyone
   io.to(roomId).emit('roundEnded', {

@@ -68,6 +68,35 @@ const winnerScore = document.getElementById('winnerScore');
 const finalScoresList = document.getElementById('finalScoresList');
 const backToMenuBtn = document.getElementById('backToMenuBtn');
 
+// Add new DOM elements for recap and settings screens
+const gameRecapScreen = document.getElementById('game-recap');
+const adjustSettingsScreen = document.getElementById('adjust-settings');
+
+// Game recap elements
+const recapRoundDisplay = document.getElementById('recapRoundDisplay');
+const recapWord = document.getElementById('recapWord');
+const recapDrawer = document.getElementById('recapDrawer');
+const recapCanvas = document.getElementById('recapCanvas');
+const recapGuessersList = document.getElementById('recapGuessersList');
+const prevRoundBtn = document.getElementById('prevRoundBtn');
+const nextRoundBtn = document.getElementById('nextRoundBtn');
+const backFromRecapBtn = document.getElementById('backFromRecapBtn');
+
+// Game end buttons
+const viewRecapBtn = document.getElementById('viewRecapBtn');
+const hostEndControls = document.getElementById('hostEndControls');
+const playAgainBtn = document.getElementById('playAgainBtn');
+const adjustSettingsBtn = document.getElementById('adjustSettingsBtn');
+
+// Adjust settings elements
+const newRoundsInput = document.getElementById('newRounds');
+const newDrawTimeInput = document.getElementById('newDrawTime');
+const newWordCategorySelect = document.getElementById('newWordCategory');
+const newCustomWordsInput = document.getElementById('newCustomWords');
+const newCustomWordsContainer = document.getElementById('newCustomWordsContainer');
+const startNewGameBtn = document.getElementById('startNewGameBtn');
+const backFromSettingsBtn = document.getElementById('backFromSettingsBtn');
+
 // Game state
 let currentPlayer = {
     id: null,
@@ -91,6 +120,12 @@ let currentBrushSize = 5;
 let isEraser = false;
 let drawingHistory = [];
 let timer;
+
+// Add recap state
+let recapState = {
+    currentRoundIndex: 0,
+    rounds: []
+};
 
 // Initialize the app
 function init() {
@@ -172,6 +207,26 @@ function setupEventListeners() {
     
     // Game end
     backToMenuBtn.addEventListener('click', resetAndGoToMainMenu);
+    viewRecapBtn.addEventListener('click', viewGameRecap);
+    playAgainBtn.addEventListener('click', requestPlayAgain);
+    adjustSettingsBtn.addEventListener('click', () => showScreen(adjustSettingsScreen));
+    
+    // Game recap
+    prevRoundBtn.addEventListener('click', goToPreviousRecapRound);
+    nextRoundBtn.addEventListener('click', goToNextRecapRound);
+    backFromRecapBtn.addEventListener('click', () => showScreen(gameEndScreen));
+    
+    // Adjust settings
+    newWordCategorySelect.addEventListener('change', function() {
+        if (this.value === 'custom') {
+            newCustomWordsContainer.classList.add('visible');
+        } else {
+            newCustomWordsContainer.classList.remove('visible');
+        }
+    });
+    
+    startNewGameBtn.addEventListener('click', startNewGameWithSettings);
+    backFromSettingsBtn.addEventListener('click', () => showScreen(gameEndScreen));
     
     // Socket events
     socket.on('roomCreated', handleRoomCreated);
@@ -194,6 +249,7 @@ function setupEventListeners() {
     socket.on('newRound', handleNewRound);
     socket.on('gameEnded', handleGameEnded);
     socket.on('notification', data => showNotification(data.message));
+    socket.on('recapData', handleRecapData);
 }
 
 // Validate player name input
@@ -1201,7 +1257,7 @@ function handleNewRound(data) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         
-        // Hide the word display until word is selected
+        // Always reset word display at the start of a new round
         currentWordElement.textContent = "Waiting for drawer to select a word...";
         
         // Ensure drawing tools are hidden for non-drawers
@@ -1259,6 +1315,12 @@ function handleGameEnded(data) {
         finalScoresList.appendChild(li);
     });
     
+    // Show host controls if current player is host
+    hostEndControls.classList.toggle('hidden', !currentRoom.isHost);
+    
+    // Request recap data
+    socket.emit('getRecapData');
+    
     // Show game end screen
     showScreen(gameEndScreen);
     
@@ -1281,6 +1343,173 @@ function resetAndGoToMainMenu() {
     
     // Go back to main menu
     showScreen(mainMenu);
+}
+
+// Handle recap data
+function handleRecapData(data) {
+    recapState.rounds = data.rounds;
+    recapState.settings = data.settings;
+    recapState.currentRoundIndex = 0;
+}
+
+// View game recap
+function viewGameRecap() {
+    if (recapState.rounds.length === 0) {
+        showNotification('No recap data available.');
+        return;
+    }
+    
+    // Display the first round
+    displayRecapRound(0);
+    
+    // Show recap screen
+    showScreen(gameRecapScreen);
+}
+
+// Display a specific round in the recap
+function displayRecapRound(roundIndex) {
+    const roundData = recapState.rounds[roundIndex];
+    if (!roundData) return;
+    
+    // Update navigation
+    recapRoundDisplay.textContent = `Round ${roundData.round} of ${recapState.settings.rounds}`;
+    prevRoundBtn.disabled = roundIndex === 0;
+    nextRoundBtn.disabled = roundIndex >= recapState.rounds.length - 1;
+    
+    // Update round info
+    recapWord.textContent = roundData.word;
+    recapDrawer.textContent = roundData.drawer.name;
+    
+    // Setup recap canvas
+    const recapCtx = recapCanvas.getContext('2d');
+    recapCanvas.width = recapCanvas.parentElement.clientWidth;
+    recapCanvas.height = 300;
+    recapCtx.clearRect(0, 0, recapCanvas.width, recapCanvas.height);
+    
+    // Replay the drawings
+    replayDrawings(roundData.drawings, recapCtx);
+    
+    // Update guessers list
+    updateRecapGuessersList(roundData.guessers);
+    
+    // Save current round index
+    recapState.currentRoundIndex = roundIndex;
+}
+
+// Replay drawings on the recap canvas
+function replayDrawings(drawings, ctx) {
+    if (!drawings || !ctx) return;
+    
+    drawings.forEach(action => {
+        if (action.type === 'line') {
+            // Draw a line
+            ctx.beginPath();
+            ctx.moveTo(action.from.x, action.from.y);
+            ctx.lineTo(action.to.x, action.to.y);
+            ctx.strokeStyle = action.color;
+            ctx.lineWidth = action.brushSize;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        } else if (action.type === 'erase') {
+            // Erase an area
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(action.to.x, action.to.y, action.size, 0, Math.PI * 2, true);
+            ctx.clip();
+            ctx.clearRect(action.to.x - action.size, action.to.y - action.size, action.size * 2, action.size * 2);
+            ctx.restore();
+        } else if (action.type === 'clear') {
+            // Clear the canvas
+            ctx.clearRect(0, 0, recapCanvas.width, recapCanvas.height);
+        }
+    });
+}
+
+// Update the recap guessers list
+function updateRecapGuessersList(guessers) {
+    recapGuessersList.innerHTML = '';
+    
+    // Sort by time (correct guessers first, then by time)
+    guessers.sort((a, b) => {
+        if (a.correct && !b.correct) return -1;
+        if (!a.correct && b.correct) return 1;
+        return a.time - b.time;
+    });
+    
+    guessers.forEach(guesser => {
+        const li = document.createElement('li');
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = guesser.name;
+        
+        const resultSpan = document.createElement('span');
+        
+        if (guesser.correct) {
+            resultSpan.textContent = `Correct (${guesser.time}s)`;
+            resultSpan.className = 'correct-guesser';
+        } else {
+            resultSpan.textContent = 'Did not guess';
+            resultSpan.className = 'missed-guesser';
+        }
+        
+        li.appendChild(nameSpan);
+        li.appendChild(resultSpan);
+        
+        recapGuessersList.appendChild(li);
+    });
+}
+
+// Navigate to previous round in recap
+function goToPreviousRecapRound() {
+    if (recapState.currentRoundIndex > 0) {
+        displayRecapRound(recapState.currentRoundIndex - 1);
+    }
+}
+
+// Navigate to next round in recap
+function goToNextRecapRound() {
+    if (recapState.currentRoundIndex < recapState.rounds.length - 1) {
+        displayRecapRound(recapState.currentRoundIndex + 1);
+    }
+}
+
+// Request to play again
+function requestPlayAgain() {
+    socket.emit('playAgain');
+}
+
+// Start new game with adjusted settings
+function startNewGameWithSettings() {
+    const rounds = parseInt(newRoundsInput.value);
+    const drawTime = parseInt(newDrawTimeInput.value);
+    const category = newWordCategorySelect.value;
+    
+    let wordList = null;
+    if (category === 'custom') {
+        const customWords = newCustomWordsInput.value.trim();
+        
+        if (customWords === '') {
+            showNotification('Please enter some custom words.');
+            return;
+        }
+        
+        wordList = customWords.split(',')
+            .map(word => word.trim())
+            .filter(word => word !== '');
+            
+        if (wordList.length < 5) {
+            showNotification('Please enter at least 5 custom words.');
+            return;
+        }
+    }
+    
+    // Send new settings to server
+    socket.emit('playAgain', {
+        rounds: rounds,
+        drawTime: drawTime,
+        wordList: wordList,
+        wordCategory: category
+    });
 }
 
 // Initialize on page load

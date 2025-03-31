@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const wordLists = require('./wordLists');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,14 +26,9 @@ app.get('/health', (req, res) => {
 
 // Game state
 const rooms = {};
-const DEFAULT_WORDS = [
-  'apple', 'banana', 'cat', 'dog', 'elephant', 'fish', 'guitar', 'house', 'igloo', 'jacket',
-  'kangaroo', 'lion', 'monkey', 'notebook', 'orange', 'pizza', 'queen', 'robot', 'snake', 'tiger',
-  'umbrella', 'violin', 'whale', 'xylophone', 'yacht', 'zebra', 'airplane', 'beach', 'computer',
-  'dragon', 'earth', 'flower', 'giraffe', 'helicopter', 'island', 'jupiter', 'koala', 'lamp',
-  'mountain', 'nightfall', 'ocean', 'penguin', 'rainbow', 'spaceship', 'train', 'unicorn',
-  'volcano', 'waterfall', 'xmas', 'yogurt', 'zombie'
-];
+
+// Default word list
+const defaultWords = wordLists.default;
 
 // Generate a random 4-digit room code
 function generateRoomCode() {
@@ -71,37 +67,41 @@ io.on('connection', (socket) => {
   });
 
   // Create room
-  socket.on('createRoom', ({ playerName, settings }) => {
-    // Generate a unique 4-digit room code
+  socket.on('createRoom', (data) => {
+    const { playerName, settings } = data;
+    
+    // Generate unique room code
     let roomId;
     do {
       roomId = generateRoomCode();
-    } while (rooms[roomId]); // Ensure code doesn't already exist
+    } while (rooms[roomId]);
     
-    // Initialize room state
+    // Store player info
+    const player = {
+      id: socket.id,
+      name: playerName,
+      score: 0,
+      isHost: true,
+      guessedCorrectly: false
+    };
+    
+    // Create room
     rooms[roomId] = {
       id: roomId,
-      players: {
-        [socket.id]: {
-          id: socket.id,
-          name: playerName,
-          score: 0,
-          guessedCorrectly: false,
-          isHost: true
-        }
-      },
+      players: { [socket.id]: player },
+      currentRound: 0,
       settings: {
         rounds: settings?.rounds || 3,
         drawTime: settings?.drawTime || 80,
-        wordList: settings?.wordList || DEFAULT_WORDS
+        wordList: settings?.wordList || defaultWords,
+        wordCategory: settings?.wordCategory || 'default'
       },
       state: 'waiting',
-      currentRound: 0,
       currentDrawer: null,
       currentWord: null,
       wordOptions: [],
       revealedLetters: [],
-      drawings: [] // Store drawing data for undo functionality
+      drawings: []
     };
 
     socket.join(roomId);
@@ -148,55 +148,77 @@ io.on('connection', (socket) => {
     console.log(`Game started in room ${roomId}`);
   });
 
-  // Word selection
-  socket.on('selectWord', (selectedWord) => {
+  // Word selection by drawer
+  socket.on('selectWord', (word) => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
-
+    
     const room = rooms[roomId];
     
-    // Check if player is the current drawer
-    if (room.currentDrawer !== socket.id) return;
+    // Only accept word selection from current drawer
+    if (socket.id !== room.currentDrawer) return;
     
-    room.currentWord = selectedWord;
-    room.revealedLetters = Array(selectedWord.length).fill(false);
+    // Set the current word
+    room.currentWord = word;
+    
+    // Create initial hint with all letters hidden
+    const hint = word.replace(/[a-zA-Z]/g, '_ ');
+    room.revealedLetters = Array(word.length).fill(false);
+    
+    // Record start time
     room.startTime = Date.now();
-    room.drawings = []; // Reset drawings array
     
-    // Reset player guesses
-    Object.keys(room.players).forEach(playerId => {
+    // Notify all players
+    io.to(socket.id).emit('wordSelected', {
+      word: word,
+      hint: hint,
+      drawTime: room.settings.drawTime,
+      round: room.currentRound,
+      drawer: room.players[room.currentDrawer].name
+    });
+    
+    // Send hint to everyone else (except drawer)
+    socket.to(roomId).emit('wordSelected', {
+      word: '',
+      hint: hint,
+      drawTime: room.settings.drawTime,
+      round: room.currentRound,
+      drawer: room.players[room.currentDrawer].name
+    });
+    
+    // Send initial hint to all clients
+    io.to(roomId).emit('wordHint', hint);
+    
+    // Reset guessed status
+    for (let playerId in room.players) {
       room.players[playerId].guessedCorrectly = false;
-    });
-    
-    // Send masked word to all players except drawer
-    io.to(roomId).emit('roundStarted', {
-      drawer: room.players[room.currentDrawer].name,
-      wordLength: selectedWord.length
-    });
-    
-    // Send selected word to drawer only
-    socket.emit('wordSelected', selectedWord);
-    
-    // Start timer
-    startRoundTimer(roomId);
-    
-    console.log(`Round started in room ${roomId}, word: ${selectedWord}`);
-  });
-
-  // Drawing updates
-  socket.on('drawLine', (drawData) => {
-    const roomId = socket.roomId;
-    if (!roomId || !rooms[roomId]) return;
-    
-    const room = rooms[roomId];
-    
-    // Only store drawer's lines for undo functionality
-    if (socket.id === room.currentDrawer) {
-      room.drawings.push(drawData);
     }
     
-    // Forward drawing data to all clients except sender
-    socket.to(roomId).emit('drawLine', drawData);
+    // Start round timer
+    startRoundTimer(roomId);
+  });
+
+  // Handle draw line
+  socket.on('drawLine', (lineData) => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Only the drawer can draw
+    if (socket.id === room.currentDrawer) {
+      // Store drawing data for undo functionality
+      room.drawings.push({
+        type: 'line',
+        from: lineData.from,
+        to: lineData.to,
+        color: lineData.color,
+        brushSize: lineData.brushSize
+      });
+      
+      // Forward to other clients
+      socket.to(roomId).emit('drawLine', lineData);
+    }
   });
 
   // Handle eraser
@@ -340,6 +362,32 @@ io.on('connection', (socket) => {
       endRound(roomId);
     }
   });
+
+  // Change word category
+  socket.on('changeWordCategory', (category) => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Only host can change category
+    if (!room.players[socket.id] || !room.players[socket.id].isHost) return;
+    
+    // Only allow changing in waiting state
+    if (room.state !== 'waiting') return;
+    
+    // Update the category and word list
+    if (wordLists[category]) {
+      room.settings.wordCategory = category;
+      room.settings.wordList = wordLists[category];
+      
+      // Notify all players
+      io.to(roomId).emit('categoryChanged', {
+        category: category,
+        settings: room.settings
+      });
+    }
+  });
 });
 
 // Helper functions
@@ -435,7 +483,8 @@ function startNextRound(roomId) {
   io.to(roomId).emit('newRound', {
     round: room.currentRound,
     totalRounds: room.settings.rounds,
-    drawer: room.players[room.currentDrawer].name
+    drawer: room.players[room.currentDrawer].name,
+    drawerId: room.currentDrawer
   });
   
   // Send word options to drawer

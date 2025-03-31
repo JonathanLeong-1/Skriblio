@@ -125,6 +125,11 @@ function setupEventListeners() {
     startGameBtn.addEventListener('click', startGame);
     leaveRoomBtn.addEventListener('click', leaveRoom);
     
+    // Word category selection
+    document.getElementById('wordCategory').addEventListener('change', function() {
+        changeWordCategory(this.value);
+    });
+    
     // Word selection
     wordOptions.forEach(option => {
         option.addEventListener('click', function() {
@@ -182,6 +187,7 @@ function setupEventListeners() {
     socket.on('newRound', handleNewRound);
     socket.on('gameEnded', handleGameEnded);
     socket.on('notification', data => showNotification(data.message));
+    socket.on('categoryChanged', handleCategoryChanged);
 }
 
 // Validate player name input
@@ -209,13 +215,37 @@ function showScreen(screen) {
         gameEndScreen
     ];
     
-    screens.forEach(s => s.classList.add('hidden'));
-    screen.classList.remove('hidden');
+    // First hide all screens with animation
+    screens.forEach(s => {
+        if (!s.classList.contains('hidden')) {
+            // Apply transition out effect
+            s.style.opacity = '0';
+            s.style.transform = 'translateY(10px)';
+            
+            // After transition completes, hide the element
+            setTimeout(() => {
+                s.classList.add('hidden');
+                s.style.opacity = '';
+                s.style.transform = '';
+            }, 300);
+        }
+    });
     
-    // Special handling for game screen
-    if (screen === gameScreen) {
-        setupCanvas();
-    }
+    // Then show the requested screen with animation after a slight delay
+    setTimeout(() => {
+        screen.classList.remove('hidden');
+        
+        // Apply transition in effect
+        setTimeout(() => {
+            screen.style.opacity = '1';
+            screen.style.transform = 'translateY(0)';
+        }, 50);
+        
+        // Special handling for game screen
+        if (screen === gameScreen) {
+            setupCanvas();
+        }
+    }, 350);
 }
 
 // Show notification
@@ -288,6 +318,17 @@ function updatePlayersList(players) {
     playersList.innerHTML = '';
     inGamePlayersList.innerHTML = '';
     
+    // Find the player with the highest score
+    let highestScore = -1;
+    let highestScorerId = null;
+    
+    players.forEach(player => {
+        if (player.score > highestScore) {
+            highestScore = player.score;
+            highestScorerId = player.id;
+        }
+    });
+    
     // Add players to both lists
     players.forEach(player => {
         // Waiting room list
@@ -307,7 +348,13 @@ function updatePlayersList(players) {
         // In-game list
         const inGameLi = document.createElement('li');
         const nameSpan = document.createElement('span');
-        nameSpan.textContent = player.name;
+        
+        // Add crown to player with highest score (if any player has a score)
+        if (player.id === highestScorerId && highestScore > 0) {
+            nameSpan.textContent = '👑 ' + player.name;
+        } else {
+            nameSpan.textContent = player.name;
+        }
         
         // Add drawer indicator if needed
         if (player.id === currentRoom.drawer) {
@@ -502,10 +549,28 @@ function handleRoundStarted(data) {
     startTimer(currentRoom.settings.drawTime);
 }
 
-// Handle word selected event (drawer only)
-function handleWordSelected(word) {
-    currentWordElement.textContent = word;
-    wordDisplay.classList.remove('hidden');
+// Handle word selected event
+function handleWordSelected(data) {
+    // Update word display
+    currentWordElement.textContent = currentPlayer.isDrawing ? data.word : data.hint;
+    
+    // Start drawing timer for all players
+    startTimer(data.drawTime);
+    
+    // Update UI for the round
+    if (currentPlayer.isDrawing) {
+        // Enable drawing tools
+        setupDrawingControls(true);
+        
+        // Disable chat
+        updateChatAccess();
+    }
+    
+    // Add system message
+    addChatMessage({
+        system: true,
+        message: `Round ${data.round} has started! ${currentPlayer.isDrawing ? 'You are' : data.drawer + ' is'} drawing.`
+    });
 }
 
 // Handle word hint update
@@ -708,12 +773,24 @@ function drawLine(fromX, fromY, toX, toY, color, size) {
 
 // Eraser function
 function erase(fromX, fromY, toX, toY) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(toX, toY, currentBrushSize * 2, 0, Math.PI * 2, true);
-    ctx.clip();
-    ctx.clearRect(toX - currentBrushSize * 2, toY - currentBrushSize * 2, currentBrushSize * 4, currentBrushSize * 4);
-    ctx.restore();
+    // Calculate the number of points based on distance between from and to
+    const distance = Math.sqrt(Math.pow(toX - fromX, 2) + Math.pow(toY - fromY, 2));
+    const points = Math.max(Math.ceil(distance / 5), 2); // Ensure at least 2 points
+    
+    // Erase along the path using multiple points to ensure complete erasing
+    for (let i = 0; i < points; i++) {
+        const ratio = i / (points - 1);
+        const x = fromX + (toX - fromX) * ratio;
+        const y = fromY + (toY - fromY) * ratio;
+        
+        // Erase at each point
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, currentBrushSize * 2, 0, Math.PI * 2, true);
+        ctx.clip();
+        ctx.clearRect(x - currentBrushSize * 2, y - currentBrushSize * 2, currentBrushSize * 4, currentBrushSize * 4);
+        ctx.restore();
+    }
 }
 
 // Handle draw line event from other players
@@ -737,6 +814,9 @@ function handleErase(data) {
 function handleRedraw(drawings) {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Update local drawing history
+    drawingHistory = [...drawings];
     
     // Redraw each line
     drawings.forEach(data => {
@@ -801,7 +881,12 @@ function toggleEraser() {
 function undoLastAction() {
     if (!currentPlayer.isDrawing) return;
     
-    socket.emit('undo');
+    // Only emit undo event if there's something to undo
+    if (drawingHistory.length > 0) {
+        // Remove the last action from local history
+        drawingHistory.pop();
+        socket.emit('undo');
+    }
 }
 
 // Clear the canvas
@@ -957,6 +1042,12 @@ function handleRoundEnded(data) {
     
     // Show round end screen
     showScreen(roundEndScreen);
+    
+    // Add a transition countdown message
+    addChatMessage({
+        system: true,
+        message: 'Next round starting in 5 seconds...'
+    });
 }
 
 // Update the scores list
@@ -994,13 +1085,39 @@ function handleNewRound(data) {
     currentRoundElement.textContent = data.round;
     
     // Reset drawing state
-    currentPlayer.isDrawing = socket.id === currentRoom.drawer;
+    currentPlayer.isDrawing = socket.id === data.drawerId;
+    currentRoom.drawer = data.drawerId;
     
     // Add system message
     addChatMessage({
         system: true,
         message: `Round ${data.round} of ${data.totalRounds} - ${data.drawer} is drawing`
     });
+    
+    // If current player is the drawer, show word selection
+    if (currentPlayer.isDrawing) {
+        // Wait for word options to be sent
+    } else {
+        // Non-drawers go to game screen and wait
+        showScreen(gameScreen);
+        
+        // Reset canvas
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // Update chat accessibility
+        updateChatAccess();
+        
+        // Add waiting message
+        addChatMessage({
+            system: true,
+            message: `Waiting for ${data.drawer} to choose a word...`
+        });
+    }
+    
+    // Update player list to reflect new drawer
+    updatePlayersList(currentRoom.players);
 }
 
 // Handle game ended event
@@ -1055,6 +1172,22 @@ function resetAndGoToMainMenu() {
     
     // Go back to main menu
     showScreen(mainMenu);
+}
+
+// Change word category
+function changeWordCategory(category) {
+    socket.emit('changeWordCategory', category);
+}
+
+// Handle category changed event
+function handleCategoryChanged(data) {
+    showNotification(`Word category changed to "${data.category}"`);
+    
+    // Update dropdown selection if needed
+    const categorySelect = document.getElementById('wordCategory');
+    if (categorySelect.value !== data.category) {
+        categorySelect.value = data.category;
+    }
 }
 
 // Initialize on page load

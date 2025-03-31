@@ -76,16 +76,33 @@
     <!-- Waiting Room Screen -->
     <div id="waiting-room" class="screen hidden">
         <div class="container">
-            <h1>Room Code: <span id="roomCodeDisplay"></span></h1>
-            <p>Share this code with your friends</p>
+            <h1>Waiting Room</h1>
+            <p>Share this code with your friends to join: <span id="roomCodeDisplay" class="room-code"></span></p>
+            
+            <div id="hostControls" class="host-controls hidden">
+                <div class="form-group">
+                    <h3>Game Settings</h3>
+                    <div class="word-category-container">
+                        <label for="wordCategory">Word Category:</label>
+                        <select id="wordCategory" class="word-category-select">
+                            <option value="default">Default Mix</option>
+                            <option value="animals">Animals</option>
+                            <option value="food">Food</option>
+                            <option value="countries">Countries</option>
+                            <option value="sports">Sports</option>
+                            <option value="movies">Movies</option>
+                            <option value="objects">Objects</option>
+                            <option value="jobs">Jobs</option>
+                            <option value="places">Places</option>
+                            <option value="fantasy">Fantasy</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
             
             <div class="players-container">
                 <h2>Players</h2>
                 <ul id="playersList"></ul>
-            </div>
-            
-            <div id="hostControls" class="hidden">
-                <button id="startGameBtn" class="btn primary-btn">Start Game</button>
             </div>
             
             <button id="leaveRoomBtn" class="btn secondary-btn">Leave Room</button>

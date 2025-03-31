@@ -151,6 +151,11 @@ function setupEventListeners() {
     // Join room
     joinBtn.addEventListener('click', joinRoom);
     backFromJoinBtn.addEventListener('click', () => showScreen(mainMenu));
+    roomCodeInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            joinRoom();
+        }
+    });
     
     // Create room - category selection
     const createRoomCategory = document.getElementById('createRoomCategory');
@@ -1149,6 +1154,12 @@ function handleRoundEnded(data) {
     // Update scores list
     updateScoresList(data.scores);
     
+    // Check if this was the last round
+    if (currentRoom.settings.rounds && parseInt(currentRoundElement.textContent) >= currentRoom.settings.rounds) {
+        // Skip the countdown and go straight to game end
+        return;
+    }
+    
     // Start the countdown timer for the next round
     startRoundEndCountdown();
     
@@ -1320,6 +1331,13 @@ function handleGameEnded(data) {
     // Show host controls if current player is host
     hostEndControls.classList.toggle('hidden', !currentRoom.isHost);
     
+    // Change button text based on host status
+    if (currentRoom.isHost) {
+        backToMenuBtn.textContent = 'Disband Party';
+    } else {
+        backToMenuBtn.textContent = 'Leave Party';
+    }
+    
     // Request recap data
     socket.emit('getRecapData');
     
@@ -1385,7 +1403,7 @@ function displayRecapRound(roundIndex) {
     // Setup recap canvas
     const recapCtx = recapCanvas.getContext('2d');
     recapCanvas.width = recapCanvas.parentElement.clientWidth;
-    recapCanvas.height = 250;
+    recapCanvas.height = 220;
     recapCtx.clearRect(0, 0, recapCanvas.width, recapCanvas.height);
     
     // Replay the drawings

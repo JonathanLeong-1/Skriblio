@@ -644,10 +644,8 @@ function endRound(roomId) {
   
   // Check if game should end
   if (room.currentRound >= room.settings.rounds) {
-    // End game after 5 seconds
-    setTimeout(() => {
-      endGame(roomId);
-    }, 5000);
+    // End game immediately for the last round
+    endGame(roomId);
   } else {
     // Schedule next round after 5 seconds
     setTimeout(() => {

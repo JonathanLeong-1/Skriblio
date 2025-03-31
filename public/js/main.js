@@ -137,11 +137,6 @@ function setupEventListeners() {
     startGameBtn.addEventListener('click', startGame);
     leaveRoomBtn.addEventListener('click', leaveRoom);
     
-    // Word category selection
-    document.getElementById('wordCategory').addEventListener('change', function() {
-        changeWordCategory(this.value);
-    });
-    
     // Word selection
     wordOptions.forEach(option => {
         option.addEventListener('click', function() {
@@ -199,7 +194,6 @@ function setupEventListeners() {
     socket.on('newRound', handleNewRound);
     socket.on('gameEnded', handleGameEnded);
     socket.on('notification', data => showNotification(data.message));
-    socket.on('categoryChanged', handleCategoryChanged);
 }
 
 // Validate player name input
@@ -328,8 +322,13 @@ function createRoom() {
 function handleRoomCreated(data) {
     currentRoom.id = data.roomId;
     currentRoom.isHost = true;
+    currentRoom.settings = data.gameState.settings;
     
     roomCodeDisplay.textContent = data.roomId;
+    
+    // Display the selected word category
+    document.getElementById('waitingRoomCategory').textContent = currentRoom.settings.wordCategory;
+    
     showScreen(waitingRoomScreen);
     
     // Show host controls
@@ -413,6 +412,9 @@ function handleGameState(gameState) {
     
     // Display room code
     roomCodeDisplay.textContent = gameState.id;
+    
+    // Display the selected word category
+    document.getElementById('waitingRoomCategory').textContent = currentRoom.settings.wordCategory;
     
     // Check if current player is host
     const currentPlayerData = gameState.players[socket.id];
@@ -1054,6 +1056,11 @@ function startTimer(seconds) {
     }, 1000);
 }
 
+// Clear chat messages
+function clearChatMessages() {
+    chatMessages.innerHTML = '';
+}
+
 // Handle round ended event
 function handleRoundEnded(data) {
     // Stop the timer
@@ -1067,6 +1074,12 @@ function handleRoundEnded(data) {
     // Update scores list
     updateScoresList(data.scores);
     
+    // Start the countdown timer for the next round
+    startRoundEndCountdown();
+    
+    // Clear chat messages
+    clearChatMessages();
+    
     // Show round end screen
     showScreen(roundEndScreen);
     
@@ -1075,6 +1088,31 @@ function handleRoundEnded(data) {
         system: true,
         message: 'Next round starting in 5 seconds...'
     });
+}
+
+// Start the round end countdown
+function startRoundEndCountdown() {
+    const countdownElement = document.createElement('div');
+    countdownElement.id = 'roundEndCountdown';
+    countdownElement.className = 'round-end-countdown';
+    countdownElement.textContent = '5';
+    
+    // Add the countdown element to the round end screen
+    document.querySelector('#round-end .container').appendChild(countdownElement);
+    
+    let countdownValue = 5;
+    
+    // Update countdown every second
+    const countdownInterval = setInterval(() => {
+        countdownValue--;
+        countdownElement.textContent = countdownValue;
+        
+        if (countdownValue <= 0) {
+            clearInterval(countdownInterval);
+            // Remove countdown element
+            countdownElement.remove();
+        }
+    }, 1000);
 }
 
 // Update the scores list
@@ -1093,7 +1131,12 @@ function updateScoresList(scores) {
         rankSpan.textContent = `#${index + 1}`;
         
         const nameSpan = document.createElement('span');
-        nameSpan.textContent = player.name;
+        // Add crown to top player
+        if (index === 0) {
+            nameSpan.textContent = `👑 ${player.name}`;
+        } else {
+            nameSpan.textContent = player.name;
+        }
         
         const scoreSpan = document.createElement('span');
         scoreSpan.className = 'score';
@@ -1150,7 +1193,7 @@ function handleNewRound(data) {
 // Handle game ended event
 function handleGameEnded(data) {
     // Display winner
-    winnerName.textContent = data.winner.name;
+    winnerName.textContent = `👑 ${data.winner.name}`;
     winnerScore.textContent = data.winner.score + ' points';
     
     // Update final scores list
@@ -1167,7 +1210,12 @@ function handleGameEnded(data) {
         rankSpan.textContent = `#${index + 1}`;
         
         const nameSpan = document.createElement('span');
-        nameSpan.textContent = player.name;
+        // Add crown to winner
+        if (index === 0) {
+            nameSpan.textContent = `👑 ${player.name}`;
+        } else {
+            nameSpan.textContent = player.name;
+        }
         
         const scoreSpan = document.createElement('span');
         scoreSpan.className = 'score';
@@ -1182,6 +1230,9 @@ function handleGameEnded(data) {
     
     // Show game end screen
     showScreen(gameEndScreen);
+    
+    // Clear chat messages
+    clearChatMessages();
 }
 
 // Reset everything and go back to main menu
@@ -1199,22 +1250,6 @@ function resetAndGoToMainMenu() {
     
     // Go back to main menu
     showScreen(mainMenu);
-}
-
-// Change word category
-function changeWordCategory(category) {
-    socket.emit('changeWordCategory', category);
-}
-
-// Handle category changed event
-function handleCategoryChanged(data) {
-    showNotification(`Word category changed to "${data.category}"`);
-    
-    // Update dropdown selection if needed
-    const categorySelect = document.getElementById('wordCategory');
-    if (categorySelect.value !== data.category) {
-        categorySelect.value = data.category;
-    }
 }
 
 // Initialize on page load

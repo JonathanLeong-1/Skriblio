@@ -1158,6 +1158,12 @@ function handleNewRound(data) {
     currentPlayer.isDrawing = socket.id === data.drawerId;
     currentRoom.drawer = data.drawerId;
     
+    // Reset guess state for this player
+    const myPlayer = currentRoom.players.find(p => p.id === socket.id);
+    if (myPlayer) {
+        myPlayer.guessedCorrectly = false;
+    }
+    
     // Add system message
     addChatMessage({
         system: true,

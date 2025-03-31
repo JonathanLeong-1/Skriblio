@@ -184,7 +184,7 @@ io.on('connection', (socket) => {
     // Record start time
     room.startTime = Date.now();
     
-    // Notify all players
+    // Notify the drawer with the full word
     io.to(socket.id).emit('wordSelected', {
       word: word,
       hint: hint,
@@ -201,9 +201,6 @@ io.on('connection', (socket) => {
       round: room.currentRound,
       drawer: room.players[room.currentDrawer].name
     });
-    
-    // Send initial hint to all clients
-    io.to(roomId).emit('wordHint', hint);
     
     // Reset guessed status
     for (let playerId in room.players) {
@@ -418,13 +415,17 @@ function getRandomWords(wordList, count) {
 function startRoundTimer(roomId) {
   const room = rooms[roomId];
   
-  // Reveal a letter every 20% of time
-  const letterInterval = Math.floor(room.settings.drawTime * 1000 / 5);
+  // Calculate the maximum number of letters that can be revealed (less than 50%)
+  const maxLettersToReveal = Math.floor(room.currentWord.length * 0.4);
+  
+  // Reveal a letter every 25% of time instead of 20%
+  const letterInterval = Math.floor(room.settings.drawTime * 1000 / 4);
   
   let hintsRevealed = 0;
   
   function revealLetter() {
-    if (hintsRevealed < 3 && room.currentWord) {
+    // Only reveal if we haven't hit the maximum
+    if (hintsRevealed < maxLettersToReveal && room.currentWord) {
       // Find unrevealed letters
       const unrevealed = room.revealedLetters
         .map((revealed, i) => ({ revealed, index: i }))
@@ -444,8 +445,10 @@ function startRoundTimer(roomId) {
         io.to(roomId).emit('wordHint', hint);
         hintsRevealed++;
         
-        // Schedule next hint
-        setTimeout(revealLetter, letterInterval);
+        // Schedule next hint if we haven't hit the maximum
+        if (hintsRevealed < maxLettersToReveal) {
+          setTimeout(revealLetter, letterInterval);
+        }
       }
     }
   }
@@ -494,6 +497,14 @@ function startNextRound(roomId) {
   const currentDrawerIndex = playerIds.indexOf(room.currentDrawer);
   const nextDrawerIndex = (currentDrawerIndex + 1) % playerIds.length;
   room.currentDrawer = playerIds[nextDrawerIndex];
+  
+  // Reset all players' guessedCorrectly status for the new round
+  for (let playerId in room.players) {
+    room.players[playerId].guessedCorrectly = false;
+  }
+  
+  // Reset drawings
+  room.drawings = [];
   
   // Generate new word options
   room.wordOptions = getRandomWords(room.settings.wordList, 3);

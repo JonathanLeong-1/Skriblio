@@ -89,16 +89,30 @@ io.on('connection', (socket) => {
         guessedCorrectly: false
       };
       
+      // Get the correct word list based on category
+      let wordList = settings.wordList;
+      const category = settings.wordCategory || 'general';
+      
+      if (!wordList && category !== 'custom') {
+        if (wordLists[category]) {
+          wordList = wordLists[category];
+          console.log(`Using ${category} word list with ${wordList.length} words`);
+        } else {
+          wordList = defaultWords;
+          console.log(`Category ${category} not found, using default word list`);
+        }
+      }
+      
       // Create room
       rooms[roomId] = {
         id: roomId,
         players: { [socket.id]: player },
         currentRound: 0,
         settings: {
-          rounds: settings?.rounds || 3,
-          drawTime: settings?.drawTime || 80,
-          wordList: settings?.wordList || defaultWords,
-          wordCategory: settings?.wordCategory || 'general'
+          rounds: settings?.rounds || 6,
+          drawTime: settings?.drawTime || 60,
+          wordList: wordList,
+          wordCategory: category
         },
         state: 'waiting',
         currentDrawer: null,
@@ -113,7 +127,7 @@ io.on('connection', (socket) => {
       
       // Send room details to creator
       socket.emit('roomCreated', { roomId, gameState: rooms[roomId] });
-      console.log(`${playerName} created room ${roomId} successfully`);
+      console.log(`${playerName} created room ${roomId} successfully with category ${category}`);
     } catch (error) {
       console.error(`Error creating room:`, error);
       socket.emit('notification', { message: 'Error creating room. Please try again.' });
@@ -508,8 +522,13 @@ function startNextRound(roomId) {
   // Reset drawings
   room.drawings = [];
   
+  // Log the word list info for debugging
+  console.log(`Starting round ${room.currentRound} in room ${roomId}`);
+  console.log(`Using category: ${room.settings.wordCategory}, list length: ${room.settings.wordList.length}`);
+  
   // Generate new word options
   room.wordOptions = getRandomWords(room.settings.wordList, 3);
+  console.log(`Generated word options: ${room.wordOptions.join(', ')}`);
   
   // Notify all players
   io.to(roomId).emit('newRound', {

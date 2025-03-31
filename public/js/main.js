@@ -287,6 +287,8 @@ function createRoom() {
     const selectedCategory = categorySelect.value;
     const customWords = customWordsInput.value.trim();
     
+    console.log("Creating room with category:", selectedCategory);
+    
     // Parse custom words if "custom" category is selected
     let wordList = null;
     let wordCategory = selectedCategory;
@@ -558,12 +560,8 @@ function selectWord(word) {
 
 // Handle round started event
 function handleRoundStarted(data) {
-    // If not drawing, show word as underscores
-    if (!currentPlayer.isDrawing) {
-        const wordPlaceholder = '_ '.repeat(data.wordLength).trim();
-        currentWordElement.textContent = wordPlaceholder;
-        wordDisplay.classList.remove('hidden');
-    }
+    // Hide the word display until word is selected
+    currentWordElement.textContent = "Waiting for drawer to select a word...";
     
     // Enable/disable drawing based on role
     setupDrawingControls(currentPlayer.isDrawing);
@@ -600,6 +598,12 @@ function handleWordSelected(data) {
         setupDrawingControls(true);
         
         // Disable chat
+        updateChatAccess();
+    } else {
+        // Explicitly hide drawing tools for non-drawers
+        setupDrawingControls(false);
+        
+        // Update chat accessibility
         updateChatAccess();
     }
     
@@ -652,12 +656,17 @@ function resizeCanvas() {
 function setupDrawingControls(isDrawer) {
     const drawingTools = document.querySelector('.drawing-tools');
     
+    // Force hide drawing tools for non-drawers
+    if (!isDrawer) {
+        drawingTools.classList.add('hidden');
+        canvas.style.cursor = 'default';
+        return;
+    }
+    
+    // Only show drawing tools for drawer
     if (isDrawer) {
         drawingTools.classList.remove('hidden');
         canvas.style.cursor = 'crosshair';
-    } else {
-        drawingTools.classList.add('hidden');
-        canvas.style.cursor = 'default';
     }
 }
 
@@ -1180,6 +1189,8 @@ function handleNewRound(data) {
     
     // If current player is the drawer, show word selection
     if (currentPlayer.isDrawing) {
+        // Setup drawing controls for the drawer
+        setupDrawingControls(true);
         // Wait for word options to be sent
     } else {
         // Non-drawers go to game screen and wait
@@ -1192,6 +1203,9 @@ function handleNewRound(data) {
         
         // Hide the word display until word is selected
         currentWordElement.textContent = "Waiting for drawer to select a word...";
+        
+        // Ensure drawing tools are hidden for non-drawers
+        setupDrawingControls(false);
         
         // Update chat accessibility
         updateChatAccess();

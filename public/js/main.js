@@ -1,0 +1,879 @@
+// Connect to server
+const socket = io();
+
+// DOM elements
+// Screens
+const mainMenu = document.getElementById('main-menu');
+const joinRoomScreen = document.getElementById('join-room');
+const createRoomScreen = document.getElementById('create-room');
+const waitingRoomScreen = document.getElementById('waiting-room');
+const wordSelectionScreen = document.getElementById('word-selection');
+const gameScreen = document.getElementById('game-screen');
+const roundEndScreen = document.getElementById('round-end');
+const gameEndScreen = document.getElementById('game-end');
+const notification = document.getElementById('notification');
+
+// Main menu
+const playerNameInput = document.getElementById('playerName');
+const createRoomBtn = document.getElementById('createRoomBtn');
+const joinRoomBtn = document.getElementById('joinRoomBtn');
+
+// Join room
+const roomCodeInput = document.getElementById('roomCode');
+const joinBtn = document.getElementById('joinBtn');
+const backFromJoinBtn = document.getElementById('backFromJoinBtn');
+
+// Create room
+const roundsInput = document.getElementById('rounds');
+const drawTimeInput = document.getElementById('drawTime');
+const customWordsInput = document.getElementById('customWords');
+const createBtn = document.getElementById('createBtn');
+const backFromCreateBtn = document.getElementById('backFromCreateBtn');
+
+// Waiting room
+const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+const playersList = document.getElementById('playersList');
+const hostControls = document.getElementById('hostControls');
+const startGameBtn = document.getElementById('startGameBtn');
+const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+
+// Word selection
+const wordOptions = document.querySelectorAll('.word-option');
+
+// Game screen
+const currentRoundElement = document.getElementById('currentRound');
+const totalRoundsElement = document.getElementById('totalRounds');
+const wordDisplay = document.getElementById('word-display');
+const currentWordElement = document.getElementById('currentWord');
+const timeLeftElement = document.getElementById('timeLeft');
+const drawingCanvas = document.getElementById('drawingCanvas');
+const colorBtns = document.querySelectorAll('.color-btn');
+const brushBtns = document.querySelectorAll('.brush-btn');
+const clearBtn = document.getElementById('clearBtn');
+const inGamePlayersList = document.getElementById('inGamePlayersList');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const sendMsgBtn = document.getElementById('sendMsgBtn');
+
+// Round end
+const revealedWord = document.getElementById('revealedWord');
+const scoresList = document.getElementById('scoresList');
+
+// Game end
+const winnerName = document.getElementById('winnerName');
+const winnerScore = document.getElementById('winnerScore');
+const finalScoresList = document.getElementById('finalScoresList');
+const backToMenuBtn = document.getElementById('backToMenuBtn');
+
+// Game state
+let currentPlayer = {
+    id: null,
+    name: '',
+    isDrawing: false
+};
+
+let currentRoom = {
+    id: null,
+    players: [],
+    settings: {},
+    isHost: false
+};
+
+let canvas, ctx;
+let isDrawing = false;
+let lastX = 0;
+let lastY = 0;
+let currentColor = '#000000';
+let currentBrushSize = 5;
+let timer;
+
+// Initialize the app
+function init() {
+    setupEventListeners();
+    showScreen(mainMenu);
+}
+
+// Setup all event listeners
+function setupEventListeners() {
+    // Main menu
+    createRoomBtn.addEventListener('click', () => {
+        if (validatePlayerName()) {
+            showScreen(createRoomScreen);
+        }
+    });
+    
+    joinRoomBtn.addEventListener('click', () => {
+        if (validatePlayerName()) {
+            showScreen(joinRoomScreen);
+        }
+    });
+    
+    // Join room
+    joinBtn.addEventListener('click', joinRoom);
+    backFromJoinBtn.addEventListener('click', () => showScreen(mainMenu));
+    
+    // Create room
+    createBtn.addEventListener('click', createRoom);
+    backFromCreateBtn.addEventListener('click', () => showScreen(mainMenu));
+    
+    // Waiting room
+    startGameBtn.addEventListener('click', startGame);
+    leaveRoomBtn.addEventListener('click', leaveRoom);
+    
+    // Word selection
+    wordOptions.forEach(option => {
+        option.addEventListener('click', function() {
+            selectWord(this.textContent);
+        });
+    });
+    
+    // Drawing tools
+    colorBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            setActiveColor(this);
+        });
+    });
+    
+    brushBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            setActiveBrush(this);
+        });
+    });
+    
+    clearBtn.addEventListener('click', clearCanvas);
+    
+    // Chat
+    chatInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendChatMessage();
+        }
+    });
+    
+    sendMsgBtn.addEventListener('click', sendChatMessage);
+    
+    // Game end
+    backToMenuBtn.addEventListener('click', resetAndGoToMainMenu);
+    
+    // Socket events
+    socket.on('roomCreated', handleRoomCreated);
+    socket.on('roomNotFound', () => showNotification('Room not found!'));
+    socket.on('updatePlayers', updatePlayersList);
+    socket.on('gameState', handleGameState);
+    socket.on('newHost', handleNewHost);
+    socket.on('gameStarted', handleGameStarted);
+    socket.on('chooseWord', handleChooseWord);
+    socket.on('roundStarted', handleRoundStarted);
+    socket.on('wordSelected', handleWordSelected);
+    socket.on('drawLine', handleDrawLine);
+    socket.on('clearCanvas', handleClearCanvas);
+    socket.on('wordHint', handleWordHint);
+    socket.on('chatMessage', handleChatMessage);
+    socket.on('correctGuess', handleCorrectGuess);
+    socket.on('roundEnded', handleRoundEnded);
+    socket.on('newRound', handleNewRound);
+    socket.on('gameEnded', handleGameEnded);
+    socket.on('notification', data => showNotification(data.message));
+}
+
+// Validate player name input
+function validatePlayerName() {
+    const name = playerNameInput.value.trim();
+    if (name === '') {
+        showNotification('Please enter your name.');
+        return false;
+    }
+    
+    currentPlayer.name = name;
+    return true;
+}
+
+// Show specific screen and hide others
+function showScreen(screen) {
+    const screens = [
+        mainMenu, 
+        joinRoomScreen, 
+        createRoomScreen, 
+        waitingRoomScreen, 
+        wordSelectionScreen, 
+        gameScreen, 
+        roundEndScreen, 
+        gameEndScreen
+    ];
+    
+    screens.forEach(s => s.classList.add('hidden'));
+    screen.classList.remove('hidden');
+    
+    // Special handling for game screen
+    if (screen === gameScreen) {
+        setupCanvas();
+    }
+}
+
+// Show notification
+function showNotification(message) {
+    notificationMessage.textContent = message;
+    notification.classList.remove('hidden');
+    
+    // Auto hide after animation completes
+    setTimeout(() => {
+        notification.classList.add('hidden');
+    }, 3000);
+}
+
+// Join a room
+function joinRoom() {
+    const roomId = roomCodeInput.value.trim();
+    if (roomId === '') {
+        showNotification('Please enter a room code.');
+        return;
+    }
+    
+    socket.emit('joinRoom', {
+        roomId: roomId,
+        playerName: currentPlayer.name
+    });
+}
+
+// Create a new room
+function createRoom() {
+    const rounds = parseInt(roundsInput.value);
+    const drawTime = parseInt(drawTimeInput.value);
+    const customWords = customWordsInput.value.trim();
+    
+    // Parse custom words if provided
+    let wordList = null;
+    if (customWords !== '') {
+        wordList = customWords.split(',')
+            .map(word => word.trim())
+            .filter(word => word !== '');
+    }
+    
+    socket.emit('createRoom', {
+        playerName: currentPlayer.name,
+        settings: {
+            rounds: rounds,
+            drawTime: drawTime,
+            wordList: wordList
+        }
+    });
+}
+
+// Handle room created event
+function handleRoomCreated(data) {
+    currentRoom.id = data.roomId;
+    currentRoom.isHost = true;
+    
+    roomCodeDisplay.textContent = data.roomId;
+    showScreen(waitingRoomScreen);
+    
+    // Show host controls
+    hostControls.classList.remove('hidden');
+    
+    // Update player list
+    updatePlayersList(Object.values(data.gameState.players));
+}
+
+// Update the players list
+function updatePlayersList(players) {
+    // Empty the list
+    playersList.innerHTML = '';
+    inGamePlayersList.innerHTML = '';
+    
+    // Add players to both lists
+    players.forEach(player => {
+        // Waiting room list
+        const li = document.createElement('li');
+        li.textContent = player.name;
+        
+        // Add host badge if player is host
+        if (player.isHost) {
+            const hostBadge = document.createElement('span');
+            hostBadge.className = 'host-badge';
+            hostBadge.textContent = 'HOST';
+            li.appendChild(hostBadge);
+        }
+        
+        playersList.appendChild(li);
+        
+        // In-game list
+        const inGameLi = document.createElement('li');
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = player.name;
+        
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = player.score || 0;
+        
+        inGameLi.appendChild(nameSpan);
+        inGameLi.appendChild(scoreSpan);
+        
+        // Highlight current drawer
+        if (player.id === currentRoom.drawer) {
+            inGameLi.classList.add('drawer');
+            inGameLi.style.fontWeight = 'bold';
+        }
+        
+        inGamePlayersList.appendChild(inGameLi);
+    });
+    
+    // Save players list to current room
+    currentRoom.players = players;
+}
+
+// Handle game state update
+function handleGameState(gameState) {
+    currentRoom.settings = gameState.settings;
+    
+    // Display room code
+    roomCodeDisplay.textContent = gameState.id;
+    
+    // Check if current player is host
+    const currentPlayerData = gameState.players[socket.id];
+    currentRoom.isHost = currentPlayerData && currentPlayerData.isHost;
+    
+    // Show/hide host controls
+    hostControls.classList.toggle('hidden', !currentRoom.isHost);
+    
+    // Show appropriate screen based on game state
+    if (gameState.state === 'waiting') {
+        showScreen(waitingRoomScreen);
+    } else if (gameState.state === 'playing') {
+        // We joined in the middle of a game
+        currentRoundElement.textContent = gameState.currentRound;
+        totalRoundsElement.textContent = gameState.settings.rounds;
+        showScreen(gameScreen);
+    }
+}
+
+// Handle new host assignment
+function handleNewHost(newHostId) {
+    // Check if current player is the new host
+    if (newHostId === socket.id) {
+        currentRoom.isHost = true;
+        hostControls.classList.remove('hidden');
+        showNotification('You are now the host!');
+    }
+    
+    // Update player list to show the new host
+    updatePlayersList(currentRoom.players.map(player => {
+        if (player.id === newHostId) {
+            player.isHost = true;
+        } else {
+            player.isHost = false;
+        }
+        return player;
+    }));
+}
+
+// Start the game
+function startGame() {
+    socket.emit('startGame');
+}
+
+// Leave the current room
+function leaveRoom() {
+    // Disconnect and reconnect to server
+    socket.disconnect();
+    socket.connect();
+    
+    // Reset state
+    resetState();
+    showScreen(mainMenu);
+}
+
+// Reset game state
+function resetState() {
+    currentRoom = {
+        id: null,
+        players: [],
+        settings: {},
+        isHost: false
+    };
+    
+    currentPlayer.isDrawing = false;
+    
+    // Clear timers
+    if (timer) {
+        clearInterval(timer);
+    }
+}
+
+// Handle game started event
+function handleGameStarted(gameState) {
+    currentRoundElement.textContent = gameState.currentRound;
+    totalRoundsElement.textContent = gameState.settings.rounds;
+    
+    // Check if current player is the first drawer
+    if (gameState.currentDrawer === socket.id) {
+        currentPlayer.isDrawing = true;
+    } else {
+        currentPlayer.isDrawing = false;
+    }
+    
+    // Store current drawer in room state
+    currentRoom.drawer = gameState.currentDrawer;
+    
+    // Update players list to reflect new state
+    updatePlayersList(Object.values(gameState.players));
+}
+
+// Handle choose word event
+function handleChooseWord(wordOptions) {
+    // Populate word option buttons
+    document.querySelectorAll('.word-option').forEach((btn, i) => {
+        btn.textContent = wordOptions[i] || '';
+    });
+    
+    showScreen(wordSelectionScreen);
+}
+
+// Select a word to draw
+function selectWord(word) {
+    socket.emit('selectWord', word);
+    showScreen(gameScreen);
+}
+
+// Handle round started event
+function handleRoundStarted(data) {
+    // If not drawing, show word as underscores
+    if (!currentPlayer.isDrawing) {
+        const wordPlaceholder = '_ '.repeat(data.wordLength).trim();
+        currentWordElement.textContent = wordPlaceholder;
+        wordDisplay.classList.remove('hidden');
+    }
+    
+    // Enable/disable drawing based on role
+    setupDrawingControls(currentPlayer.isDrawing);
+    
+    // Add system message
+    addChatMessage({
+        system: true,
+        message: `${data.drawer} is drawing now!`
+    });
+    
+    showScreen(gameScreen);
+    
+    // Start timer
+    startTimer(currentRoom.settings.drawTime);
+}
+
+// Handle word selected event (drawer only)
+function handleWordSelected(word) {
+    currentWordElement.textContent = word;
+    wordDisplay.classList.remove('hidden');
+}
+
+// Handle word hint update
+function handleWordHint(hint) {
+    currentWordElement.textContent = hint;
+}
+
+// Setup the canvas
+function setupCanvas() {
+    canvas = drawingCanvas;
+    ctx = canvas.getContext('2d');
+    
+    // Set canvas size to match container
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Setup drawing event listeners
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+    
+    // Touch events for mobile
+    canvas.addEventListener('touchstart', handleTouch);
+    canvas.addEventListener('touchmove', handleTouchMove);
+    canvas.addEventListener('touchend', stopDrawing);
+    
+    // Set initial active tools
+    setActiveColor(colorBtns[0]);
+    setActiveBrush(brushBtns[1]);
+}
+
+// Resize canvas to fit container
+function resizeCanvas() {
+    canvas.width = canvas.parentElement.clientWidth;
+    canvas.height = canvas.parentElement.clientHeight;
+    
+    // Redraw canvas if needed
+    // (This is not needed here since socket.io will sync the canvas)
+}
+
+// Setup drawing controls based on role
+function setupDrawingControls(isDrawer) {
+    const drawingTools = document.querySelector('.drawing-tools');
+    
+    if (isDrawer) {
+        drawingTools.classList.remove('hidden');
+        canvas.style.cursor = 'crosshair';
+    } else {
+        drawingTools.classList.add('hidden');
+        canvas.style.cursor = 'default';
+    }
+}
+
+// Drawing event handlers
+function startDrawing(e) {
+    if (!currentPlayer.isDrawing) return;
+    
+    isDrawing = true;
+    const rect = canvas.getBoundingClientRect();
+    lastX = e.clientX - rect.left;
+    lastY = e.clientY - rect.top;
+}
+
+function draw(e) {
+    if (!isDrawing || !currentPlayer.isDrawing) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    drawLine(lastX, lastY, x, y, currentColor, currentBrushSize);
+    
+    // Send drawing data to server
+    socket.emit('drawLine', {
+        from: { x: lastX, y: lastY },
+        to: { x, y },
+        color: currentColor,
+        brushSize: currentBrushSize
+    });
+    
+    lastX = x;
+    lastY = y;
+}
+
+function stopDrawing() {
+    isDrawing = false;
+}
+
+// Handle touch events for mobile
+function handleTouch(e) {
+    if (!currentPlayer.isDrawing) return;
+    e.preventDefault();
+    
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    lastX = touch.clientX - rect.left;
+    lastY = touch.clientY - rect.top;
+    
+    isDrawing = true;
+}
+
+function handleTouchMove(e) {
+    if (!isDrawing || !currentPlayer.isDrawing) return;
+    e.preventDefault();
+    
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    
+    drawLine(lastX, lastY, x, y, currentColor, currentBrushSize);
+    
+    // Send drawing data to server
+    socket.emit('drawLine', {
+        from: { x: lastX, y: lastY },
+        to: { x, y },
+        color: currentColor,
+        brushSize: currentBrushSize
+    });
+    
+    lastX = x;
+    lastY = y;
+}
+
+// Drawing functions
+function drawLine(fromX, fromY, toX, toY, color, size) {
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+}
+
+// Handle draw line event from other players
+function handleDrawLine(data) {
+    drawLine(
+        data.from.x,
+        data.from.y,
+        data.to.x,
+        data.to.y,
+        data.color,
+        data.brushSize
+    );
+}
+
+// Set active color
+function setActiveColor(btn) {
+    // Remove active class from all color buttons
+    colorBtns.forEach(button => button.classList.remove('active'));
+    
+    // Add active class to clicked button
+    btn.classList.add('active');
+    
+    // Set current color
+    currentColor = btn.dataset.color;
+}
+
+// Set active brush size
+function setActiveBrush(btn) {
+    // Remove active class from all brush buttons
+    brushBtns.forEach(button => button.classList.remove('active'));
+    
+    // Add active class to clicked button
+    btn.classList.add('active');
+    
+    // Set current brush size
+    currentBrushSize = parseInt(btn.dataset.size);
+}
+
+// Clear the canvas
+function clearCanvas() {
+    if (!currentPlayer.isDrawing) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Send clear canvas event to server
+    socket.emit('clearCanvas');
+}
+
+// Handle clear canvas event from drawer
+function handleClearCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// Send chat message
+function sendChatMessage() {
+    const message = chatInput.value.trim();
+    if (message === '') return;
+    
+    socket.emit('chatMessage', message);
+    chatInput.value = '';
+}
+
+// Add chat message to chat box
+function addChatMessage(data) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message';
+    
+    if (data.system) {
+        // System message
+        messageDiv.classList.add('system-message');
+        messageDiv.textContent = data.message;
+    } else if (data.correct) {
+        // Correct guess
+        messageDiv.classList.add('correct-guess');
+        messageDiv.textContent = `${data.sender} guessed the word!`;
+    } else {
+        // Player message
+        messageDiv.classList.add('player-message');
+        const senderSpan = document.createElement('strong');
+        senderSpan.textContent = data.sender + ': ';
+        
+        messageDiv.appendChild(senderSpan);
+        messageDiv.appendChild(document.createTextNode(data.message));
+    }
+    
+    chatMessages.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Handle chat message from server
+function handleChatMessage(data) {
+    addChatMessage({
+        sender: data.sender,
+        message: data.message
+    });
+}
+
+// Handle correct guess event
+function handleCorrectGuess(data) {
+    addChatMessage({
+        correct: true,
+        sender: data.playerName
+    });
+    
+    // Update score in players list
+    updatePlayerScore(data.playerId, data.scoreGained);
+}
+
+// Update a player's score in the list
+function updatePlayerScore(playerId, scoreGained) {
+    // Find player in currentRoom.players and update score
+    const player = currentRoom.players.find(p => p.id === playerId);
+    if (player) {
+        player.score = (player.score || 0) + scoreGained;
+    }
+    
+    // Update the display
+    const playerItems = inGamePlayersList.querySelectorAll('li');
+    
+    playerItems.forEach(item => {
+        const nameSpan = item.querySelector('span:first-child');
+        const scoreSpan = item.querySelector('.score');
+        
+        if (nameSpan.textContent === player.name) {
+            scoreSpan.textContent = player.score;
+            
+            // Briefly highlight the score
+            scoreSpan.style.color = '#2ecc71';
+            setTimeout(() => {
+                scoreSpan.style.color = '';
+            }, 1000);
+        }
+    });
+}
+
+// Start the game timer
+function startTimer(seconds) {
+    let timeLeft = seconds;
+    timeLeftElement.textContent = timeLeft;
+    
+    // Clear existing timer
+    if (timer) {
+        clearInterval(timer);
+    }
+    
+    // Start new timer
+    timer = setInterval(() => {
+        timeLeft--;
+        timeLeftElement.textContent = timeLeft;
+        
+        // Add urgency when time is running out
+        if (timeLeft <= 10) {
+            timeLeftElement.style.color = 'red';
+        } else {
+            timeLeftElement.style.color = 'white';
+        }
+        
+        if (timeLeft <= 0) {
+            clearInterval(timer);
+        }
+    }, 1000);
+}
+
+// Handle round ended event
+function handleRoundEnded(data) {
+    // Stop the timer
+    if (timer) {
+        clearInterval(timer);
+    }
+    
+    // Update the revealed word
+    revealedWord.textContent = data.word;
+    
+    // Update scores list
+    updateScoresList(data.scores);
+    
+    // Show round end screen
+    showScreen(roundEndScreen);
+}
+
+// Update the scores list
+function updateScoresList(scores) {
+    // Sort by score
+    scores.sort((a, b) => b.score - a.score);
+    
+    // Empty the list
+    scoresList.innerHTML = '';
+    
+    // Add players to list
+    scores.forEach((player, index) => {
+        const li = document.createElement('li');
+        
+        const rankSpan = document.createElement('span');
+        rankSpan.textContent = `#${index + 1}`;
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = player.name;
+        
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = player.score;
+        
+        li.appendChild(rankSpan);
+        li.appendChild(nameSpan);
+        li.appendChild(scoreSpan);
+        
+        scoresList.appendChild(li);
+    });
+}
+
+// Handle new round event
+function handleNewRound(data) {
+    currentRoundElement.textContent = data.round;
+    
+    // Reset drawing state
+    currentPlayer.isDrawing = socket.id === currentRoom.drawer;
+    
+    // Add system message
+    addChatMessage({
+        system: true,
+        message: `Round ${data.round} of ${data.totalRounds} - ${data.drawer} is drawing`
+    });
+}
+
+// Handle game ended event
+function handleGameEnded(data) {
+    // Display winner
+    winnerName.textContent = data.winner.name;
+    winnerScore.textContent = data.winner.score + ' points';
+    
+    // Update final scores list
+    const sortedPlayers = data.players.sort((a, b) => b.score - a.score);
+    
+    // Empty the list
+    finalScoresList.innerHTML = '';
+    
+    // Add players to list
+    sortedPlayers.forEach((player, index) => {
+        const li = document.createElement('li');
+        
+        const rankSpan = document.createElement('span');
+        rankSpan.textContent = `#${index + 1}`;
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = player.name;
+        
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = player.score;
+        
+        li.appendChild(rankSpan);
+        li.appendChild(nameSpan);
+        li.appendChild(scoreSpan);
+        
+        finalScoresList.appendChild(li);
+    });
+    
+    // Show game end screen
+    showScreen(gameEndScreen);
+}
+
+// Reset everything and go back to main menu
+function resetAndGoToMainMenu() {
+    // Disconnect and reconnect to server
+    socket.disconnect();
+    socket.connect();
+    
+    // Reset state
+    resetState();
+    
+    // Clear inputs
+    playerNameInput.value = currentPlayer.name;
+    roomCodeInput.value = '';
+    
+    // Go back to main menu
+    showScreen(mainMenu);
+}
+
+// Initialize on page load
+window.addEventListener('load', init); 

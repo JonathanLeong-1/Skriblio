@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Momentum - Draw & Guess Game</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Main Menu -->
+    <div id="main-menu" class="screen">
+        <div class="container">
+            <h1>MOMENTUM</h1>
+            <p class="subtitle">A Drawing & Guessing Game</p>
+            
+            <div class="form-group">
+                <label for="playerName">Your Name</label>
+                <input type="text" id="playerName" maxlength="16" placeholder="Enter your name" required>
+            </div>
+            
+            <div class="menu-buttons">
+                <button id="createRoomBtn" class="btn primary-btn">Create Room</button>
+                <button id="joinRoomBtn" class="btn secondary-btn">Join Room</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Join Room Screen -->
+    <div id="join-room" class="screen hidden">
+        <div class="container">
+            <h1>Join Room</h1>
+            
+            <div class="form-group">
+                <label for="roomCode">Room Code</label>
+                <input type="text" id="roomCode" maxlength="6" placeholder="Enter 6-digit code" required>
+            </div>
+            
+            <div class="menu-buttons">
+                <button id="joinBtn" class="btn primary-btn">Join</button>
+                <button id="backFromJoinBtn" class="btn secondary-btn">Back</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Create Room Screen -->
+    <div id="create-room" class="screen hidden">
+        <div class="container">
+            <h1>Create Room</h1>
+            
+            <div class="settings-container">
+                <div class="form-group">
+                    <label for="rounds">Rounds</label>
+                    <input type="number" id="rounds" min="1" max="10" value="3">
+                </div>
+                
+                <div class="form-group">
+                    <label for="drawTime">Draw Time (seconds)</label>
+                    <input type="number" id="drawTime" min="30" max="180" value="80">
+                </div>
+                
+                <div class="form-group">
+                    <label for="customWords">Custom Words (optional)</label>
+                    <textarea id="customWords" placeholder="Enter custom words, separated by commas"></textarea>
+                    <p class="hint">Leave empty to use default words</p>
+                </div>
+            </div>
+            
+            <div class="menu-buttons">
+                <button id="createBtn" class="btn primary-btn">Create</button>
+                <button id="backFromCreateBtn" class="btn secondary-btn">Back</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Waiting Room Screen -->
+    <div id="waiting-room" class="screen hidden">
+        <div class="container">
+            <h1>Room Code: <span id="roomCodeDisplay"></span></h1>
+            <p>Share this code with your friends</p>
+            
+            <div class="players-container">
+                <h2>Players</h2>
+                <ul id="playersList"></ul>
+            </div>
+            
+            <div id="hostControls" class="hidden">
+                <button id="startGameBtn" class="btn primary-btn">Start Game</button>
+            </div>
+            
+            <button id="leaveRoomBtn" class="btn secondary-btn">Leave Room</button>
+        </div>
+    </div>
+    
+    <!-- Word Selection Screen -->
+    <div id="word-selection" class="screen hidden">
+        <div class="container">
+            <h1>Choose a word to draw</h1>
+            
+            <div class="word-options">
+                <button class="word-option"></button>
+                <button class="word-option"></button>
+                <button class="word-option"></button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen hidden">
+        <div class="game-container">
+            <div class="game-header">
+                <div class="round-info">
+                    <span>Round <span id="currentRound">1</span>/<span id="totalRounds">3</span></span>
+                </div>
+                <div id="word-display" class="word-display">Word: <span id="currentWord">_ _ _ _ _</span></div>
+                <div class="timer">
+                    <span id="timeLeft">80</span>s
+                </div>
+            </div>
+            
+            <div class="main-content">
+                <div class="drawing-container">
+                    <div class="drawing-tools">
+                        <div class="colors">
+                            <button class="color-btn" data-color="#000000" style="background-color: #000000;"></button>
+                            <button class="color-btn" data-color="#ff0000" style="background-color: #ff0000;"></button>
+                            <button class="color-btn" data-color="#0000ff" style="background-color: #0000ff;"></button>
+                            <button class="color-btn" data-color="#00cc00" style="background-color: #00cc00;"></button>
+                            <button class="color-btn" data-color="#ffff00" style="background-color: #ffff00;"></button>
+                            <button class="color-btn" data-color="#ffa500" style="background-color: #ffa500;"></button>
+                            <button class="color-btn" data-color="#800080" style="background-color: #800080;"></button>
+                            <button class="color-btn" data-color="#a52a2a" style="background-color: #a52a2a;"></button>
+                        </div>
+                        <div class="brushes">
+                            <button class="brush-btn" data-size="2">S</button>
+                            <button class="brush-btn" data-size="5">M</button>
+                            <button class="brush-btn" data-size="10">L</button>
+                        </div>
+                        <button id="clearBtn" class="clear-btn">Clear</button>
+                    </div>
+                    <canvas id="drawingCanvas"></canvas>
+                </div>
+                
+                <div class="players-chat">
+                    <div class="players-list">
+                        <h3>Players</h3>
+                        <ul id="inGamePlayersList"></ul>
+                    </div>
+                    <div class="chat-box">
+                        <div class="chat-messages" id="chatMessages"></div>
+                        <div class="chat-input">
+                            <input type="text" id="chatInput" placeholder="Type your guess here...">
+                            <button id="sendMsgBtn">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Round End Screen -->
+    <div id="round-end" class="screen hidden">
+        <div class="container">
+            <h1>Round Ended</h1>
+            <p>The word was: <span id="revealedWord" class="revealed-word"></span></p>
+            
+            <div class="scoreboard">
+                <h2>Scores</h2>
+                <ul id="scoresList"></ul>
+            </div>
+            
+            <p>Next round starting soon...</p>
+        </div>
+    </div>
+    
+    <!-- Game End Screen -->
+    <div id="game-end" class="screen hidden">
+        <div class="container">
+            <h1>Game Ended</h1>
+            
+            <div class="winner-display">
+                <h2>Winner</h2>
+                <p id="winnerName" class="winner-name"></p>
+                <p id="winnerScore" class="winner-score"></p>
+            </div>
+            
+            <div class="final-scoreboard">
+                <h2>Final Scores</h2>
+                <ul id="finalScoresList"></ul>
+            </div>
+            
+            <button id="backToMenuBtn" class="btn primary-btn">Back to Menu</button>
+        </div>
+    </div>
+    
+    <!-- Notification -->
+    <div id="notification" class="hidden">
+        <p id="notificationMessage"></p>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html> 

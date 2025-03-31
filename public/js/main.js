@@ -437,6 +437,8 @@ function handleGameState(gameState) {
         
         // Update drawer status and chat access
         updateChatAccess();
+        
+        // Always call setupDrawingControls to ensure proper visibility
         setupDrawingControls(currentPlayer.isDrawing);
         
         showScreen(gameScreen);
@@ -511,6 +513,12 @@ function handleGameStarted(gameState) {
         currentPlayer.isDrawing = false;
         // Non-drawers go to game screen and wait
         showScreen(gameScreen);
+        
+        // Make sure drawing tools are hidden for non-drawers
+        setupDrawingControls(false);
+        
+        // Hide the word display until word is selected
+        currentWordElement.textContent = "Waiting for drawer to select a word...";
         
         // Add system message
         addChatMessage({
@@ -1181,6 +1189,9 @@ function handleNewRound(data) {
         if (ctx) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
+        
+        // Hide the word display until word is selected
+        currentWordElement.textContent = "Waiting for drawer to select a word...";
         
         // Update chat accessibility
         updateChatAccess();

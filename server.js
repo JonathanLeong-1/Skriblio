@@ -130,6 +130,7 @@ io.on('connection', (socket) => {
 
     const room = rooms[roomId];
     console.log(`Attempting to start game in room ${roomId}`);
+    console.log(`Using word category: ${room.settings.wordCategory}, word list length: ${room.settings.wordList.length}`);
     
     // Check if player is host
     if (room.players[socket.id]?.isHost !== true) {
@@ -154,6 +155,7 @@ io.on('connection', (socket) => {
     
     // Generate word options
     room.wordOptions = getRandomWords(room.settings.wordList, 3);
+    console.log(`Generated word options: ${room.wordOptions.join(', ')}`);
     
     // Send game state to all players
     io.to(roomId).emit('gameStarted', room);

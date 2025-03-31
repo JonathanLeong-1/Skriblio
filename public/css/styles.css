@@ -568,4 +568,12 @@ input:focus, textarea:focus {
     font-weight: bold;
     color: #3498db;
     font-size: 1.2rem;
+}
+
+#customWordsContainer {
+    display: none;
+}
+
+#customWordsContainer.visible {
+    display: block;
 } 

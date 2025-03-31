@@ -117,6 +117,18 @@ function setupEventListeners() {
     joinBtn.addEventListener('click', joinRoom);
     backFromJoinBtn.addEventListener('click', () => showScreen(mainMenu));
     
+    // Create room - category selection
+    const createRoomCategory = document.getElementById('createRoomCategory');
+    const customWordsContainer = document.getElementById('customWordsContainer');
+    
+    createRoomCategory.addEventListener('change', function() {
+        if (this.value === 'custom') {
+            customWordsContainer.classList.add('visible');
+        } else {
+            customWordsContainer.classList.remove('visible');
+        }
+    });
+    
     // Create room
     createBtn.addEventListener('click', createRoom);
     backFromCreateBtn.addEventListener('click', () => showScreen(mainMenu));
@@ -277,14 +289,28 @@ function joinRoom() {
 function createRoom() {
     const rounds = parseInt(roundsInput.value);
     const drawTime = parseInt(drawTimeInput.value);
+    const categorySelect = document.getElementById('createRoomCategory');
+    const selectedCategory = categorySelect.value;
     const customWords = customWordsInput.value.trim();
     
-    // Parse custom words if provided
+    // Parse custom words if "custom" category is selected
     let wordList = null;
-    if (customWords !== '') {
+    let wordCategory = selectedCategory;
+    
+    if (selectedCategory === 'custom') {
+        if (customWords === '') {
+            showNotification('Please enter some custom words.');
+            return;
+        }
+        
         wordList = customWords.split(',')
             .map(word => word.trim())
             .filter(word => word !== '');
+            
+        if (wordList.length < 5) {
+            showNotification('Please enter at least 5 custom words.');
+            return;
+        }
     }
     
     socket.emit('createRoom', {
@@ -292,7 +318,8 @@ function createRoom() {
         settings: {
             rounds: rounds,
             drawTime: drawTime,
-            wordList: wordList
+            wordList: wordList,
+            wordCategory: wordCategory
         }
     });
 }

@@ -28,7 +28,7 @@ app.get('/health', (req, res) => {
 const rooms = {};
 
 // Default word list
-const defaultWords = wordLists.default;
+const defaultWords = wordLists.general;
 
 // Generate a random 4-digit room code
 function generateRoomCode() {
@@ -68,62 +68,78 @@ io.on('connection', (socket) => {
 
   // Create room
   socket.on('createRoom', (data) => {
-    const { playerName, settings } = data;
-    
-    // Generate unique room code
-    let roomId;
-    do {
-      roomId = generateRoomCode();
-    } while (rooms[roomId]);
-    
-    // Store player info
-    const player = {
-      id: socket.id,
-      name: playerName,
-      score: 0,
-      isHost: true,
-      guessedCorrectly: false
-    };
-    
-    // Create room
-    rooms[roomId] = {
-      id: roomId,
-      players: { [socket.id]: player },
-      currentRound: 0,
-      settings: {
-        rounds: settings?.rounds || 3,
-        drawTime: settings?.drawTime || 80,
-        wordList: settings?.wordList || defaultWords,
-        wordCategory: settings?.wordCategory || 'default'
-      },
-      state: 'waiting',
-      currentDrawer: null,
-      currentWord: null,
-      wordOptions: [],
-      revealedLetters: [],
-      drawings: []
-    };
+    try {
+      console.log(`Attempting to create room with data:`, data);
+      const { playerName, settings } = data;
+      
+      // Generate unique room code
+      let roomId;
+      do {
+        roomId = generateRoomCode();
+      } while (rooms[roomId]);
+      
+      console.log(`Generated room code: ${roomId}`);
+      
+      // Store player info
+      const player = {
+        id: socket.id,
+        name: playerName,
+        score: 0,
+        isHost: true,
+        guessedCorrectly: false
+      };
+      
+      // Create room
+      rooms[roomId] = {
+        id: roomId,
+        players: { [socket.id]: player },
+        currentRound: 0,
+        settings: {
+          rounds: settings?.rounds || 3,
+          drawTime: settings?.drawTime || 80,
+          wordList: settings?.wordList || defaultWords,
+          wordCategory: settings?.wordCategory || 'general'
+        },
+        state: 'waiting',
+        currentDrawer: null,
+        currentWord: null,
+        wordOptions: [],
+        revealedLetters: [],
+        drawings: []
+      };
 
-    socket.join(roomId);
-    socket.roomId = roomId;
-    
-    // Send room details to creator
-    socket.emit('roomCreated', { roomId, gameState: rooms[roomId] });
-    console.log(`${playerName} created room ${roomId}`);
+      socket.join(roomId);
+      socket.roomId = roomId;
+      
+      // Send room details to creator
+      socket.emit('roomCreated', { roomId, gameState: rooms[roomId] });
+      console.log(`${playerName} created room ${roomId} successfully`);
+    } catch (error) {
+      console.error(`Error creating room:`, error);
+      socket.emit('notification', { message: 'Error creating room. Please try again.' });
+    }
   });
 
   // Start game
   socket.on('startGame', () => {
     const roomId = socket.roomId;
-    if (!roomId || !rooms[roomId]) return;
+    if (!roomId || !rooms[roomId]) {
+      console.log(`Room ${roomId} not found for startGame`);
+      return;
+    }
 
     const room = rooms[roomId];
+    console.log(`Attempting to start game in room ${roomId}`);
     
     // Check if player is host
-    if (room.players[socket.id]?.isHost !== true) return;
+    if (room.players[socket.id]?.isHost !== true) {
+      console.log(`Player ${socket.id} is not host and cannot start game`);
+      return;
+    }
     
     // Check if enough players
     if (Object.keys(room.players).length < 2) {
+      console.log(`Not enough players to start game in room ${roomId}`);
       socket.emit('notification', { message: 'Need at least 2 players to start' });
       return;
     }
@@ -145,7 +161,7 @@ io.on('connection', (socket) => {
     // Send word options only to drawer
     io.to(room.currentDrawer).emit('chooseWord', room.wordOptions);
     
-    console.log(`Game started in room ${roomId}`);
+    console.log(`Game started in room ${roomId}, drawer: ${room.players[room.currentDrawer].name}`);
   });
 
   // Word selection by drawer
@@ -377,9 +393,12 @@ io.on('connection', (socket) => {
     if (room.state !== 'waiting') return;
     
     // Update the category and word list
-    if (wordLists[category]) {
+    if (wordLists[category] || category === 'custom') {
       room.settings.wordCategory = category;
-      room.settings.wordList = wordLists[category];
+      
+      if (category !== 'custom') {
+        room.settings.wordList = wordLists[category];
+      }
       
       // Notify all players
       io.to(roomId).emit('categoryChanged', {

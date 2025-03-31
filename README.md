@@ -1,4 +1,4 @@
-# Momentum - A Drawing & Guessing Game
+# Skriblio - A Drawing & Guessing Game
 
 A real-time multiplayer drawing and guessing game inspired by Skribbl.io, built with Node.js, Express, and Socket.IO.
 

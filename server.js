@@ -21,7 +21,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Add a basic route for testing
 app.get('/health', (req, res) => {
-  res.status(200).send('Server is running!');
+  res.status(200).send('Skriblio server is running!');
 });
 
 // Game state

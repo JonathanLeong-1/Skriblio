@@ -1,5 +1,5 @@
 {
-  "name": "momentum-skribbl",
+  "name": "skriblio",
   "version": "1.0.0",
   "description": "A drawing and guessing game similar to Skribbl.io",
   "main": "server.js",

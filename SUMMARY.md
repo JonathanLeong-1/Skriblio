@@ -1,8 +1,8 @@
-# Momentum - Application Summary
+# Skriblio - Application Summary
 
 ## Overview
 
-Momentum is a real-time multiplayer drawing and guessing game similar to Skribbl.io. The application allows users to create private game rooms, customize game settings, and play with friends. The core gameplay involves one player drawing a word while others try to guess it through a chat system.
+Skriblio is a real-time multiplayer drawing and guessing game similar to Skribbl.io. The application allows users to create private game rooms, customize game settings, and play with friends. The core gameplay involves one player drawing a word while others try to guess it through a chat system.
 
 ## Application Structure
 

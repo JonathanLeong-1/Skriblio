@@ -209,7 +209,7 @@ function setupEventListeners() {
     backToMenuBtn.addEventListener('click', resetAndGoToMainMenu);
     viewRecapBtn.addEventListener('click', viewGameRecap);
     playAgainBtn.addEventListener('click', requestPlayAgain);
-    adjustSettingsBtn.addEventListener('click', () => showScreen(adjustSettingsScreen));
+    adjustSettingsBtn.addEventListener('click', showAdjustSettings);
     
     // Game recap
     prevRoundBtn.addEventListener('click', goToPreviousRecapRound);
@@ -274,7 +274,9 @@ function showScreen(screen) {
         wordSelectionScreen, 
         gameScreen, 
         roundEndScreen, 
-        gameEndScreen
+        gameEndScreen,
+        gameRecapScreen,
+        adjustSettingsScreen
     ];
     
     // First hide all screens with animation
@@ -1383,7 +1385,7 @@ function displayRecapRound(roundIndex) {
     // Setup recap canvas
     const recapCtx = recapCanvas.getContext('2d');
     recapCanvas.width = recapCanvas.parentElement.clientWidth;
-    recapCanvas.height = 300;
+    recapCanvas.height = 250;
     recapCtx.clearRect(0, 0, recapCanvas.width, recapCanvas.height);
     
     // Replay the drawings
@@ -1436,27 +1438,57 @@ function updateRecapGuessersList(guessers) {
         return a.time - b.time;
     });
     
-    guessers.forEach(guesser => {
+    // First add a header if there were any correct guessers
+    const correctGuessers = guessers.filter(g => g.correct);
+    if (correctGuessers.length > 0) {
+        const headerLi = document.createElement('li');
+        headerLi.className = 'guessers-header';
+        headerLi.textContent = 'Correct Guesses:';
+        recapGuessersList.appendChild(headerLi);
+    }
+    
+    // Add all correct guessers
+    correctGuessers.forEach(guesser => {
         const li = document.createElement('li');
         
         const nameSpan = document.createElement('span');
         nameSpan.textContent = guesser.name;
         
         const resultSpan = document.createElement('span');
-        
-        if (guesser.correct) {
-            resultSpan.textContent = `Correct (${guesser.time}s)`;
-            resultSpan.className = 'correct-guesser';
-        } else {
-            resultSpan.textContent = 'Did not guess';
-            resultSpan.className = 'missed-guesser';
-        }
+        resultSpan.textContent = `Guessed in ${guesser.time}s`;
+        resultSpan.className = 'correct-guesser';
         
         li.appendChild(nameSpan);
         li.appendChild(resultSpan);
         
         recapGuessersList.appendChild(li);
     });
+    
+    // Add a header for players who didn't guess
+    const incorrectGuessers = guessers.filter(g => !g.correct);
+    if (incorrectGuessers.length > 0) {
+        const headerLi = document.createElement('li');
+        headerLi.className = 'guessers-header';
+        headerLi.textContent = 'Did Not Guess:';
+        recapGuessersList.appendChild(headerLi);
+        
+        // Add all incorrect guessers
+        incorrectGuessers.forEach(guesser => {
+            const li = document.createElement('li');
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = guesser.name;
+            
+            const resultSpan = document.createElement('span');
+            resultSpan.textContent = 'Missed';
+            resultSpan.className = 'missed-guesser';
+            
+            li.appendChild(nameSpan);
+            li.appendChild(resultSpan);
+            
+            recapGuessersList.appendChild(li);
+        });
+    }
 }
 
 // Navigate to previous round in recap
@@ -1510,6 +1542,24 @@ function startNewGameWithSettings() {
         wordList: wordList,
         wordCategory: category
     });
+}
+
+// Show the settings adjustment screen with the current settings
+function showAdjustSettings() {
+    // Pre-fill with current settings
+    newRoundsInput.value = currentRoom.settings.rounds || 6;
+    newDrawTimeInput.value = currentRoom.settings.drawTime || 60;
+    newWordCategorySelect.value = currentRoom.settings.wordCategory || 'general';
+    
+    // Toggle custom words container visibility
+    if (newWordCategorySelect.value === 'custom') {
+        newCustomWordsContainer.classList.add('visible');
+    } else {
+        newCustomWordsContainer.classList.remove('visible');
+    }
+    
+    // Show the settings screen
+    showScreen(adjustSettingsScreen);
 }
 
 // Initialize on page load

@@ -244,6 +244,8 @@ input:focus, textarea:focus {
     align-items: center;
     background-color: #f9f9f9;
     border-bottom: 1px solid #ddd;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .colors {
@@ -285,6 +287,30 @@ input:focus, textarea:focus {
     border-color: #3498db;
 }
 
+.tool-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.tool-btn {
+    padding: 5px 10px;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tool-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.tool-btn.active {
+    background-color: #3498db;
+    color: white;
+    border-color: #3498db;
+}
+
 .clear-btn {
     padding: 5px 10px;
     background-color: #e74c3c;
@@ -318,6 +344,15 @@ input:focus, textarea:focus {
 #inGamePlayersList li {
     display: flex;
     justify-content: space-between;
+}
+
+.drawer-indicator {
+    background-color: #3498db;
+    color: white;
+    font-size: 0.7rem;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: 10px;
 }
 
 .score {
@@ -370,6 +405,12 @@ input:focus, textarea:focus {
 .chat-input input {
     flex: 1;
     margin-right: 10px;
+}
+
+.chat-input.disabled input, 
+.chat-input.disabled button {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Round End & Game End */
@@ -458,5 +499,15 @@ input:focus, textarea:focus {
     
     .menu-buttons {
         flex-direction: column;
+    }
+    
+    .drawing-tools {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .colors, .brushes, .tool-buttons {
+        margin-right: 0;
+        margin-bottom: 10px;
     }
 } 

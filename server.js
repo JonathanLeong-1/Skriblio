@@ -34,6 +34,11 @@ const DEFAULT_WORDS = [
   'volcano', 'waterfall', 'xmas', 'yogurt', 'zombie'
 ];
 
+// Generate a random 4-digit room code
+function generateRoomCode() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
 // Socket.io connection handler
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
@@ -67,7 +72,11 @@ io.on('connection', (socket) => {
 
   // Create room
   socket.on('createRoom', ({ playerName, settings }) => {
-    const roomId = uuidv4().substring(0, 6);
+    // Generate a unique 4-digit room code
+    let roomId;
+    do {
+      roomId = generateRoomCode();
+    } while (rooms[roomId]); // Ensure code doesn't already exist
     
     // Initialize room state
     rooms[roomId] = {
@@ -91,7 +100,8 @@ io.on('connection', (socket) => {
       currentDrawer: null,
       currentWord: null,
       wordOptions: [],
-      revealedLetters: []
+      revealedLetters: [],
+      drawings: [] // Store drawing data for undo functionality
     };
 
     socket.join(roomId);
@@ -131,6 +141,8 @@ io.on('connection', (socket) => {
     
     // Send game state to all players
     io.to(roomId).emit('gameStarted', room);
+    
+    // Send word options only to drawer
     io.to(room.currentDrawer).emit('chooseWord', room.wordOptions);
     
     console.log(`Game started in room ${roomId}`);
@@ -149,6 +161,7 @@ io.on('connection', (socket) => {
     room.currentWord = selectedWord;
     room.revealedLetters = Array(selectedWord.length).fill(false);
     room.startTime = Date.now();
+    room.drawings = []; // Reset drawings array
     
     // Reset player guesses
     Object.keys(room.players).forEach(playerId => {
@@ -175,14 +188,55 @@ io.on('connection', (socket) => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
     
+    const room = rooms[roomId];
+    
+    // Only store drawer's lines for undo functionality
+    if (socket.id === room.currentDrawer) {
+      room.drawings.push(drawData);
+    }
+    
     // Forward drawing data to all clients except sender
     socket.to(roomId).emit('drawLine', drawData);
+  });
+
+  // Handle eraser
+  socket.on('erase', (eraseData) => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    
+    // Forward eraser data to all clients except sender
+    socket.to(roomId).emit('erase', eraseData);
+  });
+
+  // Handle undo
+  socket.on('undo', () => {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Only the drawer can undo
+    if (socket.id !== room.currentDrawer) return;
+    
+    // Remove the last drawing action
+    if (room.drawings.length > 0) {
+      room.drawings.pop();
+      // Tell all clients to redraw
+      io.to(roomId).emit('redraw', room.drawings);
+    }
   });
 
   // Clear canvas
   socket.on('clearCanvas', () => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
+    
+    const room = rooms[roomId];
+    
+    // Only the drawer can clear
+    if (socket.id === room.currentDrawer) {
+      room.drawings = []; // Clear drawings array
+    }
     
     socket.to(roomId).emit('clearCanvas');
   });
@@ -195,11 +249,14 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     const player = room.players[socket.id];
     
+    // Check if player is the drawer (shouldn't be able to chat)
+    if (socket.id === room.currentDrawer) return;
+    
     // Check if player has already guessed correctly
     if (player.guessedCorrectly) return;
     
-    // Check if game is in playing state and player is not the drawer
-    if (room.state === 'playing' && socket.id !== room.currentDrawer) {
+    // Check if game is in playing state
+    if (room.state === 'playing') {
       // Check if message matches current word
       if (message.toLowerCase().trim() === room.currentWord.toLowerCase()) {
         // Player guessed correctly

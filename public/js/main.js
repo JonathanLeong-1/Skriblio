@@ -49,11 +49,14 @@ const timeLeftElement = document.getElementById('timeLeft');
 const drawingCanvas = document.getElementById('drawingCanvas');
 const colorBtns = document.querySelectorAll('.color-btn');
 const brushBtns = document.querySelectorAll('.brush-btn');
+const eraserBtn = document.getElementById('eraserBtn');
+const undoBtn = document.getElementById('undoBtn');
 const clearBtn = document.getElementById('clearBtn');
 const inGamePlayersList = document.getElementById('inGamePlayersList');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const sendMsgBtn = document.getElementById('sendMsgBtn');
+const chatInputContainer = document.querySelector('.chat-input');
 
 // Round end
 const revealedWord = document.getElementById('revealedWord');
@@ -85,6 +88,8 @@ let lastX = 0;
 let lastY = 0;
 let currentColor = '#000000';
 let currentBrushSize = 5;
+let isEraser = false;
+let drawingHistory = [];
 let timer;
 
 // Initialize the app
@@ -140,6 +145,8 @@ function setupEventListeners() {
         });
     });
     
+    eraserBtn.addEventListener('click', toggleEraser);
+    undoBtn.addEventListener('click', undoLastAction);
     clearBtn.addEventListener('click', clearCanvas);
     
     // Chat
@@ -165,6 +172,8 @@ function setupEventListeners() {
     socket.on('roundStarted', handleRoundStarted);
     socket.on('wordSelected', handleWordSelected);
     socket.on('drawLine', handleDrawLine);
+    socket.on('erase', handleErase);
+    socket.on('redraw', handleRedraw);
     socket.on('clearCanvas', handleClearCanvas);
     socket.on('wordHint', handleWordHint);
     socket.on('chatMessage', handleChatMessage);
@@ -300,18 +309,22 @@ function updatePlayersList(players) {
         const nameSpan = document.createElement('span');
         nameSpan.textContent = player.name;
         
+        // Add drawer indicator if needed
+        if (player.id === currentRoom.drawer) {
+            const drawerBadge = document.createElement('span');
+            drawerBadge.className = 'drawer-indicator';
+            drawerBadge.textContent = 'DRAWING';
+            nameSpan.appendChild(drawerBadge);
+            inGameLi.classList.add('drawer');
+            inGameLi.style.fontWeight = 'bold';
+        }
+        
         const scoreSpan = document.createElement('span');
         scoreSpan.className = 'score';
         scoreSpan.textContent = player.score || 0;
         
         inGameLi.appendChild(nameSpan);
         inGameLi.appendChild(scoreSpan);
-        
-        // Highlight current drawer
-        if (player.id === currentRoom.drawer) {
-            inGameLi.classList.add('drawer');
-            inGameLi.style.fontWeight = 'bold';
-        }
         
         inGamePlayersList.appendChild(inGameLi);
     });
@@ -341,6 +354,15 @@ function handleGameState(gameState) {
         // We joined in the middle of a game
         currentRoundElement.textContent = gameState.currentRound;
         totalRoundsElement.textContent = gameState.settings.rounds;
+        
+        // Check if we're the drawer
+        currentPlayer.isDrawing = gameState.currentDrawer === socket.id;
+        currentRoom.drawer = gameState.currentDrawer;
+        
+        // Update drawer status and chat access
+        updateChatAccess();
+        setupDrawingControls(currentPlayer.isDrawing);
+        
         showScreen(gameScreen);
     }
 }
@@ -400,18 +422,32 @@ function resetState() {
 
 // Handle game started event
 function handleGameStarted(gameState) {
+    // Make sure all clients transition to game screen
     currentRoundElement.textContent = gameState.currentRound;
     totalRoundsElement.textContent = gameState.settings.rounds;
     
     // Check if current player is the first drawer
     if (gameState.currentDrawer === socket.id) {
         currentPlayer.isDrawing = true;
+        // Drawer goes to word selection screen
+        showScreen(wordSelectionScreen);
     } else {
         currentPlayer.isDrawing = false;
+        // Non-drawers go to game screen and wait
+        showScreen(gameScreen);
+        
+        // Add system message
+        addChatMessage({
+            system: true,
+            message: `Waiting for ${gameState.players[gameState.currentDrawer].name} to choose a word...`
+        });
     }
     
     // Store current drawer in room state
     currentRoom.drawer = gameState.currentDrawer;
+    
+    // Update drawer status and chat access
+    updateChatAccess();
     
     // Update players list to reflect new state
     updatePlayersList(Object.values(gameState.players));
@@ -424,7 +460,10 @@ function handleChooseWord(wordOptions) {
         btn.textContent = wordOptions[i] || '';
     });
     
-    showScreen(wordSelectionScreen);
+    // Only show word selection screen if you are the drawer
+    if (currentPlayer.isDrawing) {
+        showScreen(wordSelectionScreen);
+    }
 }
 
 // Select a word to draw
@@ -444,6 +483,12 @@ function handleRoundStarted(data) {
     
     // Enable/disable drawing based on role
     setupDrawingControls(currentPlayer.isDrawing);
+    
+    // Reset drawing history
+    drawingHistory = [];
+    
+    // Update chat access
+    updateChatAccess();
     
     // Add system message
     addChatMessage({
@@ -465,7 +510,9 @@ function handleWordSelected(word) {
 
 // Handle word hint update
 function handleWordHint(hint) {
-    currentWordElement.textContent = hint;
+    if (!currentPlayer.isDrawing) {
+        currentWordElement.textContent = hint;
+    }
 }
 
 // Setup the canvas
@@ -497,9 +544,6 @@ function setupCanvas() {
 function resizeCanvas() {
     canvas.width = canvas.parentElement.clientWidth;
     canvas.height = canvas.parentElement.clientHeight;
-    
-    // Redraw canvas if needed
-    // (This is not needed here since socket.io will sync the canvas)
 }
 
 // Setup drawing controls based on role
@@ -512,6 +556,31 @@ function setupDrawingControls(isDrawer) {
     } else {
         drawingTools.classList.add('hidden');
         canvas.style.cursor = 'default';
+    }
+}
+
+// Update chat access based on role and game state
+function updateChatAccess() {
+    const isDrawer = currentPlayer.isDrawing;
+    const hasGuessedCorrectly = currentRoom.players.find(p => p.id === socket.id)?.guessedCorrectly;
+    
+    if (isDrawer || hasGuessedCorrectly) {
+        // Disable chat for drawer and correct guessers
+        chatInputContainer.classList.add('disabled');
+        chatInput.disabled = true;
+        sendMsgBtn.disabled = true;
+        
+        if (isDrawer) {
+            chatInput.placeholder = "You are the drawer and cannot chat";
+        } else {
+            chatInput.placeholder = "You already guessed correctly!";
+        }
+    } else {
+        // Enable chat for guessers
+        chatInputContainer.classList.remove('disabled');
+        chatInput.disabled = false;
+        sendMsgBtn.disabled = false;
+        chatInput.placeholder = "Type your guess here...";
     }
 }
 
@@ -532,15 +601,35 @@ function draw(e) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
-    drawLine(lastX, lastY, x, y, currentColor, currentBrushSize);
-    
-    // Send drawing data to server
-    socket.emit('drawLine', {
-        from: { x: lastX, y: lastY },
-        to: { x, y },
-        color: currentColor,
-        brushSize: currentBrushSize
-    });
+    if (isEraser) {
+        erase(lastX, lastY, x, y);
+        
+        // Send erase data to server
+        socket.emit('erase', {
+            from: { x: lastX, y: lastY },
+            to: { x, y },
+            size: currentBrushSize * 2
+        });
+    } else {
+        drawLine(lastX, lastY, x, y, currentColor, currentBrushSize);
+        
+        // Save to drawing history for undo
+        drawingHistory.push({
+            type: 'line',
+            from: { x: lastX, y: lastY },
+            to: { x, y },
+            color: currentColor,
+            brushSize: currentBrushSize
+        });
+        
+        // Send drawing data to server
+        socket.emit('drawLine', {
+            from: { x: lastX, y: lastY },
+            to: { x, y },
+            color: currentColor,
+            brushSize: currentBrushSize
+        });
+    }
     
     lastX = x;
     lastY = y;
@@ -572,15 +661,35 @@ function handleTouchMove(e) {
     const x = touch.clientX - rect.left;
     const y = touch.clientY - rect.top;
     
-    drawLine(lastX, lastY, x, y, currentColor, currentBrushSize);
-    
-    // Send drawing data to server
-    socket.emit('drawLine', {
-        from: { x: lastX, y: lastY },
-        to: { x, y },
-        color: currentColor,
-        brushSize: currentBrushSize
-    });
+    if (isEraser) {
+        erase(lastX, lastY, x, y);
+        
+        // Send erase data to server
+        socket.emit('erase', {
+            from: { x: lastX, y: lastY },
+            to: { x, y },
+            size: currentBrushSize * 2
+        });
+    } else {
+        drawLine(lastX, lastY, x, y, currentColor, currentBrushSize);
+        
+        // Save to drawing history for undo
+        drawingHistory.push({
+            type: 'line',
+            from: { x: lastX, y: lastY },
+            to: { x, y },
+            color: currentColor,
+            brushSize: currentBrushSize
+        });
+        
+        // Send drawing data to server
+        socket.emit('drawLine', {
+            from: { x: lastX, y: lastY },
+            to: { x, y },
+            color: currentColor,
+            brushSize: currentBrushSize
+        });
+    }
     
     lastX = x;
     lastY = y;
@@ -597,6 +706,16 @@ function drawLine(fromX, fromY, toX, toY, color, size) {
     ctx.stroke();
 }
 
+// Eraser function
+function erase(fromX, fromY, toX, toY) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(toX, toY, currentBrushSize * 2, 0, Math.PI * 2, true);
+    ctx.clip();
+    ctx.clearRect(toX - currentBrushSize * 2, toY - currentBrushSize * 2, currentBrushSize * 4, currentBrushSize * 4);
+    ctx.restore();
+}
+
 // Handle draw line event from other players
 function handleDrawLine(data) {
     drawLine(
@@ -609,8 +728,38 @@ function handleDrawLine(data) {
     );
 }
 
+// Handle erase event from other players
+function handleErase(data) {
+    erase(data.from.x, data.from.y, data.to.x, data.to.y);
+}
+
+// Handle redraw event (after undo)
+function handleRedraw(drawings) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Redraw each line
+    drawings.forEach(data => {
+        if (data.type === 'line') {
+            drawLine(
+                data.from.x,
+                data.from.y,
+                data.to.x,
+                data.to.y,
+                data.color,
+                data.brushSize
+            );
+        }
+    });
+}
+
 // Set active color
 function setActiveColor(btn) {
+    // Turn off eraser when selecting a color
+    if (isEraser) {
+        toggleEraser();
+    }
+    
     // Remove active class from all color buttons
     colorBtns.forEach(button => button.classList.remove('active'));
     
@@ -633,11 +782,34 @@ function setActiveBrush(btn) {
     currentBrushSize = parseInt(btn.dataset.size);
 }
 
+// Toggle eraser tool
+function toggleEraser() {
+    isEraser = !isEraser;
+    
+    if (isEraser) {
+        eraserBtn.classList.add('active');
+        // Change cursor to indicate eraser
+        canvas.style.cursor = 'url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAFKADAAQAAAABAAAAFAAAAACy3fD9AAAATElEQVQ4EWNgGAWjITAaAiM9BBgYGBj+48Fe4gyzISjsXwDxs0GIYTQERkNgFIdAKA6B//D4GpqN/oMwetx/AGH0uB/toTR6fCoJAQBHWhmSRlpLXwAAAABJRU5ErkJggg==) 10 10, auto';
+    } else {
+        eraserBtn.classList.remove('active');
+        // Reset cursor
+        canvas.style.cursor = 'crosshair';
+    }
+}
+
+// Undo last drawing action
+function undoLastAction() {
+    if (!currentPlayer.isDrawing) return;
+    
+    socket.emit('undo');
+}
+
 // Clear the canvas
 function clearCanvas() {
     if (!currentPlayer.isDrawing) return;
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawingHistory = [];
     
     // Send clear canvas event to server
     socket.emit('clearCanvas');
@@ -646,10 +818,14 @@ function clearCanvas() {
 // Handle clear canvas event from drawer
 function handleClearCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawingHistory = [];
 }
 
 // Send chat message
 function sendChatMessage() {
+    // Don't send if chat is disabled
+    if (chatInput.disabled) return;
+    
     const message = chatInput.value.trim();
     if (message === '') return;
     
@@ -703,6 +879,11 @@ function handleCorrectGuess(data) {
     
     // Update score in players list
     updatePlayerScore(data.playerId, data.scoreGained);
+    
+    // If I guessed correctly, disable my chat
+    if (data.playerId === socket.id) {
+        updateChatAccess();
+    }
 }
 
 // Update a player's score in the list
@@ -711,6 +892,7 @@ function updatePlayerScore(playerId, scoreGained) {
     const player = currentRoom.players.find(p => p.id === playerId);
     if (player) {
         player.score = (player.score || 0) + scoreGained;
+        player.guessedCorrectly = true;
     }
     
     // Update the display
@@ -720,7 +902,7 @@ function updatePlayerScore(playerId, scoreGained) {
         const nameSpan = item.querySelector('span:first-child');
         const scoreSpan = item.querySelector('.score');
         
-        if (nameSpan.textContent === player.name) {
+        if (nameSpan.textContent.includes(player.name)) {
             scoreSpan.textContent = player.score;
             
             // Briefly highlight the score
